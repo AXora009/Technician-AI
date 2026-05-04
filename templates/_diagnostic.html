@@ -1,0 +1,125 @@
+<div class="answer diagnostic">
+  <div class="answer-banner">
+    <span>Diagnostic · Question {{ step }}</span>
+    {% if is_resolved %}
+      <span style="color: #a8c896;">Root cause confirmed</span>
+    {% elif step < 3 %}
+      <span>{{ step }}/3 — gathering evidence</span>
+    {% else %}
+      <span>Narrowing down…</span>
+    {% endif %}
+  </div>
+
+  <div class="answer-body">
+
+    {% if history %}
+    <div class="diag-history">
+      {% for msg in history %}
+        <div class="diag-msg diag-msg-{{ msg.role }}">
+          <span class="diag-role">{{ 'AI' if msg.role == 'assistant' else 'You' }}</span>
+          <span class="diag-content">{{ msg.content }}</span>
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="diag-current{% if is_resolved %} diag-final{% endif %}">
+      <div class="answer-text">{{ message }}</div>
+    </div>
+
+    {% if not is_resolved %}
+    <div class="diag-reply-area">
+      <div class="diag-reply-label">Respond ▸</div>
+      <div class="diag-quick-row">
+        <form hx-post="/diagnose/step" hx-target="#answer" hx-swap="innerHTML" hx-indicator="#diag-thinking" style="display:contents">
+          <input type="hidden" name="session_id" value="{{ session_id }}">
+          <input type="hidden" name="answer" value="Yes">
+          <button type="submit" class="btn btn-secondary">Yes</button>
+        </form>
+        <form hx-post="/diagnose/step" hx-target="#answer" hx-swap="innerHTML" hx-indicator="#diag-thinking" style="display:contents">
+          <input type="hidden" name="session_id" value="{{ session_id }}">
+          <input type="hidden" name="answer" value="No">
+          <button type="submit" class="btn btn-secondary">No</button>
+        </form>
+        <form hx-post="/diagnose/step" hx-target="#answer" hx-swap="innerHTML" hx-indicator="#diag-thinking" style="display:contents">
+          <input type="hidden" name="session_id" value="{{ session_id }}">
+          <input type="hidden" name="answer" value="Not sure">
+          <button type="submit" class="btn btn-ghost">Not sure</button>
+        </form>
+      </div>
+      <form class="diag-text-row" hx-post="/diagnose/step" hx-target="#answer" hx-swap="innerHTML" hx-indicator="#diag-thinking">
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+        <input type="text" name="answer" placeholder="Or describe what you see…" class="diag-text-input">
+        <button type="submit" class="btn">Send</button>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if is_resolved %}
+      {% if sources %}
+      <div class="sources">
+        <div class="sources-head">References</div>
+        {% for s in sources %}
+          <div class="src">
+            <div class="src-num">[#{{ s.index }}]</div>
+            <div class="src-body">
+              {% if s.kind == 'manual_chunk' %}
+                <span class="src-label">{{ s.metadata.get('title', s.metadata.get('manual_title', 'untitled')) }}</span>
+                <span class="src-meta"> — {{ s.metadata.get('manual_title', '?') }}{% if s.metadata.get('page') %} · p.{{ s.metadata.page }}{% elif s.metadata.get('slide') %} · slide {{ s.metadata.slide }}{% endif %}</span>
+              {% else %}
+                <span class="src-label">{{ s.metadata.get('title', 'Field note') }}</span>
+                <span class="src-meta"> — captured field knowledge</span>
+              {% endif %}
+              {% if s.metadata.get('topic_path') %}
+                <span class="tag" style="margin-left: 0.4rem;">{{ s.metadata.topic_path|join('/') }}</span>
+              {% endif %}
+              {% if s.metadata.get('entry_type') %}
+                <span class="tag tag-{{ s.metadata.entry_type }}">{{ s.metadata.entry_type }}</span>
+              {% endif %}
+              <span class="src-preview">{{ s.preview }}{% if s.preview|length >= 200 %}…{% endif %}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if conversation_id %}
+      <div class="feedback" id="feedback-{{ conversation_id }}">
+        <span class="feedback-prompt">Mark outcome ▸</span>
+        <button class="btn btn-secondary"
+                hx-post="/feedback/{{ conversation_id }}"
+                hx-vals='{"kind": "worked"}'
+                hx-target="#feedback-{{ conversation_id }}"
+                hx-swap="outerHTML">
+          Worked
+        </button>
+        <button type="button" class="btn btn-ghost" data-toggle-learned="failed-form-{{ conversation_id }}">
+          Didn't work
+        </button>
+        <button type="button" class="btn btn-ghost" data-toggle-learned="learned-form-{{ conversation_id }}">
+          + Add field note
+        </button>
+
+        <form class="learned-form" id="failed-form-{{ conversation_id }}"
+              hx-post="/feedback/{{ conversation_id }}"
+              hx-target="#feedback-{{ conversation_id }}"
+              hx-swap="outerHTML">
+          <input type="hidden" name="kind" value="failed">
+          <input type="text" name="note" placeholder="What actually happened? What's the right fix?" required>
+          <button type="submit" class="btn">Save</button>
+        </form>
+
+        <form class="learned-form" id="learned-form-{{ conversation_id }}"
+              hx-post="/feedback/{{ conversation_id }}"
+              hx-target="#feedback-{{ conversation_id }}"
+              hx-swap="outerHTML">
+          <input type="hidden" name="kind" value="learned">
+          <input type="text" name="note" placeholder="Field tip, gotcha, missing context" required>
+          <button type="submit" class="btn">Save</button>
+        </form>
+      </div>
+      {% endif %}
+    {% endif %}
+
+  </div>
+</div>

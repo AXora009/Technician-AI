@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+import pdfplumber
 from pptx import Presentation
-from pypdf import PdfReader
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import db
 import rag
@@ -15,12 +17,12 @@ SUPPORTED_EXTS = {".pdf", ".pptx"}
 
 
 def _extract_pdf_pages(pdf_path: Path) -> list[tuple[int, str]]:
-    reader = PdfReader(str(pdf_path))
-    pages: list[tuple[int, str]] = []
-    for page_num, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if text:
-            pages.append((page_num, text))
+    pages = []
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for i, page in enumerate(pdf.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if text:
+                pages.append((i, text))
     return pages
 
 
@@ -73,7 +75,8 @@ def ingest_file(path: Path) -> int:
     db.init_db()
 
     # Tag first, sequentially, so the topic taxonomy converges within a manual.
-    print(f"  tagging {len(page_chunks)} chunks ...")
+    mode = "LLM" if tagger.USE_LLM_TAGGER else "fast/no-LLM"
+    print(f"  tagging {len(page_chunks)} chunks [{mode}] ...")
     existing_topics = db.list_existing_topic_paths()
     tags_per_chunk: list[dict] = []
     for i, (_, chunk) in enumerate(page_chunks):

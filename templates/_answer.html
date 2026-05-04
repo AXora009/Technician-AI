@@ -1,7 +1,12 @@
 <div class="answer">
   <div class="answer-banner">
-    <span>Response · Conv #{{ conversation_id }}</span>
-    <span>{{ sources|length }} {{ 'source' if sources|length == 1 else 'sources' }} cited</span>
+    {% if mode == 'retrieval' %}
+      <span>Retrieved Sources · {{ sources|length }} match{{ 'es' if sources|length != 1 else '' }}</span>
+      <span style="color: var(--amber);">Direct retrieval — no AI synthesis</span>
+    {% else %}
+      <span>Response · Conv #{{ conversation_id }}</span>
+      <span>{{ sources|length }} {{ 'source' if sources|length == 1 else 'sources' }} cited</span>
+    {% endif %}
   </div>
   <div class="answer-body">
     <div class="answer-text">{{ answer }}</div>
