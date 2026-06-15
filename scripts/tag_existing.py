@@ -8,10 +8,10 @@ import json
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
-import db
-import tagger
+from technician_ai import database as db
+from technician_ai import tagging as tagger
 
 
 def main() -> None:

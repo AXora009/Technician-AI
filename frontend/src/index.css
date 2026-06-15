@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Safe-area padding for notched phones (iPhone X+) */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Diagnosis confidence level colors */
+.confidence-high   { color: #22c55e; font-weight: 600; }
+.confidence-medium { color: #b7791f; font-weight: 600; }
+.confidence-low    { color: #ef4444; font-weight: 600; }
+
+/* Prevent text size inflation on mobile rotation */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* Better tap targets on mobile */
+button, [role="button"] { touch-action: manipulation; }
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-teal: var(--teal);
+  --color-teal-dim: var(--teal-dim);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/* ── Light: slate paper ── */
+:root {
+  --background: oklch(0.985 0.003 250);    /* slate-50  #f8fafc */
+  --foreground: oklch(0.15 0.014 254);     /* slate-950 #020617 */
+  --card: oklch(1.0 0 0);                  /* white */
+  --card-foreground: oklch(0.21 0.012 254);/* slate-900 */
+  --popover: oklch(1.0 0 0);
+  --popover-foreground: oklch(0.21 0.012 254);
+  --primary: oklch(0.55 0.023 255);        /* slate-500 #64748b */
+  --primary-foreground: oklch(0.985 0.003 250);
+  --secondary: oklch(0.93 0.006 264);      /* slate-200 #e2e8f0 */
+  --secondary-foreground: oklch(0.28 0.014 256);/* slate-800 */
+  --muted: oklch(0.93 0.006 264);          /* slate-200 */
+  --muted-foreground: oklch(0.55 0.023 255);/* slate-500 */
+  --accent: oklch(0.93 0.006 264);
+  --accent-foreground: oklch(0.28 0.014 256);
+  --destructive: oklch(0.577 0.245 27);
+  --border: oklch(0.87 0.008 258);         /* slate-300 #cbd5e1 */
+  --input: oklch(0.93 0.006 264);
+  --ring: oklch(0.55 0.023 255);
+  --teal: oklch(0.60 0.08 190);            /* teal-500 accent */
+  --teal-dim: oklch(0.50 0.06 190);
+  --radius: 0.25rem;
+}
+
+/* ── Dark: deep slate-blue (matches original screenshot) ── */
+.dark {
+  --background: oklch(0.12 0.015 255);     /* ~#0b1120 deep slate */
+  --foreground: oklch(0.88 0.012 252);     /* brighter text */
+  --card: oklch(0.16 0.018 255);           /* ~#111a2e raised card */
+  --card-foreground: oklch(0.88 0.012 252);
+  --popover: oklch(0.16 0.018 255);
+  --popover-foreground: oklch(0.88 0.012 252);
+  --primary: oklch(0.80 0.06 190);         /* brighter teal button bg */
+  --primary-foreground: oklch(0.10 0.015 255);
+  --secondary: oklch(0.28 0.018 255);      /* brighter button bg */
+  --secondary-foreground: oklch(0.88 0.012 252);
+  --muted: oklch(0.22 0.016 255);
+  --muted-foreground: oklch(0.65 0.016 252);/* brighter muted text */
+  --accent: oklch(0.22 0.016 255);
+  --accent-foreground: oklch(0.88 0.012 252);
+  --destructive: oklch(0.704 0.191 22);
+  --border: oklch(0.32 0.018 255);         /* brighter borders */
+  --input: oklch(0.18 0.018 255);
+  --ring: oklch(0.75 0.06 190);
+  --teal: oklch(0.75 0.06 190);            /* teal accent for highlights */
+  --teal-dim: oklch(0.60 0.05 190);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}

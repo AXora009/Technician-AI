@@ -1,10 +1,20 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
-anthropic>=0.40
-voyageai>=0.3
 numpy>=1.26
 pdfplumber>=0.11
 python-pptx>=1.0
+python-docx>=1.2
+openpyxl>=3.1
+PyMuPDF>=1.24
 jinja2>=3.1
 python-multipart>=0.0.12
 python-dotenv>=1.0
+qrcode>=8.0
+
+# LLM providers (install the one you use)
+anthropic>=0.40
+openai>=1.40
+
+# Embedding providers (install the one you use)
+voyageai>=0.3
+google-genai>=1.0

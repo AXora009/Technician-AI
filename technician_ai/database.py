@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import struct
 from pathlib import Path
 
 import numpy as np
 
-EMBED_DIM = 1536
+EMBED_DIM = int(os.environ.get("EMBED_DIM", "512"))
 DB_PATH = os.environ.get("TECHNICIAN_AI_DB", "./data/tech.db")
 
 
@@ -158,6 +159,56 @@ def list_all_documents(limit: int = 20) -> list[dict]:
         conn.close()
 
 
+def search_by_keywords(query: str, k: int = 6) -> list[dict]:
+    """Keyword-based fallback retrieval when embeddings are disabled.
+
+    Scores each document by how many unique query terms appear in its text,
+    then returns the top-k by score. Falls back to most-recent if no matches.
+    """
+    _STOPWORDS = {
+        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "to", "of", "in", "for",
+        "on", "with", "at", "by", "from", "and", "or", "but", "not", "this",
+        "that", "it", "its", "what", "which", "who", "how", "when", "where",
+        "i", "my", "we", "our", "you", "your", "they", "their",
+    }
+    words = [w.lower() for w in re.split(r"\W+", query) if len(w) > 2 and w.lower() not in _STOPWORDS]
+    if not words:
+        return list_all_documents(limit=k)
+
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, kind, text, metadata_json FROM documents"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    scored = []
+    for r in rows:
+        text_lower = r["text"].lower()
+        score = sum(1 for w in words if w in text_lower)
+        if score > 0:
+            scored.append((score, r))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    if not scored:
+        return list_all_documents(limit=k)
+
+    return [
+        {
+            "id": r["id"],
+            "kind": r["kind"],
+            "text": r["text"],
+            "metadata": json.loads(r["metadata_json"]),
+            "score": score,
+        }
+        for score, r in scored[:k]
+    ]
+
+
 def insert_conversation(
     question: str, answer: str, retrieved_doc_ids: list[int]
 ) -> int:
@@ -266,6 +317,46 @@ def list_existing_topic_paths(limit: int = 2000) -> list[list[str]]:
             seen.add(key)
             out.append(tp)
     return out
+
+
+def list_manuals() -> list[dict]:
+    """Return distinct manuals with chunk count and source path."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT metadata_json FROM documents WHERE kind = 'manual_chunk'"
+        ).fetchall()
+    finally:
+        conn.close()
+    seen: dict[str, dict] = {}
+    for r in rows:
+        meta = json.loads(r["metadata_json"])
+        title = meta.get("manual_title", "")
+        if not title:
+            continue
+        if title not in seen:
+            seen[title] = {"title": title, "chunks": 0, "source_path": meta.get("source_path", "")}
+        seen[title]["chunks"] += 1
+    return list(seen.values())
+
+
+def delete_manual(title: str) -> int:
+    """Delete all chunks for a manual. Returns number of rows deleted."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM documents WHERE metadata_json LIKE ?",
+            (f'%"manual_title": "{title}"%',)
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            conn.execute(
+                f"DELETE FROM documents WHERE id IN ({','.join('?' for _ in ids)})", ids
+            )
+            conn.commit()
+        return len(ids)
+    finally:
+        conn.close()
 
 
 def list_knowledge_entries(limit: int = 100) -> list[dict]:
