@@ -47,7 +47,7 @@ export function FeedbackWidget({ conversationId }: FeedbackWidgetProps) {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Describe what you learned..."
-          className="min-h-[60px] text-sm bg-card"
+          className="min-h-[60px] bg-card"
         />
         <div className="flex gap-2">
           <Button size="sm" variant="secondary" onClick={() => setState("idle")}>
@@ -66,7 +66,7 @@ export function FeedbackWidget({ conversationId }: FeedbackWidgetProps) {
   }
 
   return (
-    <div className="flex items-center gap-2 pt-2">
+    <div className="flex flex-wrap items-center gap-2 pt-2">
       <span className="text-xs font-mono text-muted-foreground mr-1">Outcome:</span>
       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => submit("worked")}>
         <Check className="h-3 w-3 mr-1" /> Worked

@@ -6,7 +6,9 @@ import { AnswerCard } from "@/components/ask/answer-card";
 import { DiagnoseCard } from "@/components/ask/diagnose-card";
 import { EntryList } from "@/components/knowledge/entry-list";
 import { Spinner } from "@/components/shared/spinner";
+import { MobileApp } from "@/components/mobile/mobile-app";
 import { api } from "@/hooks/use-api";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import type { AskResponse, DiagnoseResponse, KnowledgeEntry, Topic } from "@/types/api";
 
 type ResultView =
@@ -18,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const portrait = useMediaQuery("(orientation: portrait)");
 
   const refresh = useCallback(async () => {
     const [k, t] = await Promise.all([api.knowledge(), api.topics()]);
@@ -68,6 +71,8 @@ export default function App() {
       setLoading(false);
     }
   }
+
+  if (portrait) return <MobileApp />;
 
   const drawer = <KnowledgeDrawer topics={topics} onUploadComplete={refresh} />;
 
