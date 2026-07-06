@@ -645,7 +645,7 @@ def diagnose_step(
     if EMBEDDINGS_ENABLED:
         snippets = db.search_similar(embed_query(retrieval_query), k=TOP_K)
     else:
-        snippets = db.search_by_keywords(retrieval_query, k=TOP_K)
+        snippets = db.search_by_keywords(retrieval_query, k=TOP_K, machine=machine)
 
     if not snippets:
         return {
