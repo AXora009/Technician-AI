@@ -474,6 +474,22 @@ Technician AI bets that LLMs finally close that gap. Three taps and one sentence
 - ✅ Automatic language detection and same-language answers across Q&A and diagnosisz
 
 ---
+**Agent Workflow (next)**
+- ⏳ Escalation triggers for repeated loops, low-confidence diagnosis, safety risk, and long unresolved sessions *(basic count-based nudge exists; full loop/confidence/time triggers not yet built)*
+- ○ Supervisor handoff packet with timeline, evidence, attempted fixes, and suspected causes
+
+**Product UX (next)**
+- ○ Voice input on the answer page (mobile-first capture)
+- ○ Photo attachment on knowledge entries
+- ○ "Conflict surfaced" UI when manual and field note disagree
+- ○ Per-knowledge-entry validation count and decay
+- ○ Retrieval routing by document type (circuit diagram vs. SOP vs. checklist)
+- ○ pgvector backend for >100K chunks
+
+**Beyond**
+- ○ Multi-tenant deployment story
+- ○ Equipment / parts ontology
+- ○ Real-time collaboration on a single fix-in-progress
 
 ## Contributing
 
