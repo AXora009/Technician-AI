@@ -325,6 +325,7 @@ def ingest_file(path: Path) -> int:
             "topic_path": tags["topic_path"],
             "entry_type": tags["entry_type"],
             "title": tags["title"],
+            "machine": tags.get("machine"),
         }
         rows.append(("manual_chunk", chunk, embedding, metadata))
 

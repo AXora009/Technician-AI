@@ -21,34 +21,25 @@ from . import safety as safety_gate
 
 _diag_sessions: dict[str, dict] = {}
 
-_MACHINE_DISPLAY: list[tuple[tuple[str, ...], str]] = [
-    (("glass loading",), "Glass Loading Machine"),
-    (("edge trimming",), "Edge Trimming Machine"),
-    (("corner wrapping",), "Corner Wrapping Machine"),
-    (("busbar tab lifting", "busbar lifting", "tab lifting", "busbar leads lifting"), "Busbar Tab Lifting Machine"),
-    (("busbar soldering",), "Busbar Soldering Machine"),
-    (("all in one soldering", "all-in-one soldering", "soldering stringer"), "All-in-One Soldering Machine"),
-    (("junction box soldering",), "Junction Box Soldering Machine"),
-]
-
-_MACHINE_NAMES: list[str] = [name for _, name in _MACHINE_DISPLAY]
-
 # After this many assistant turns without a resolution, nudge the agent to
 # conclude with an escalation recommendation (soft cap, configurable).
 DIAGNOSE_ESCALATE_AFTER = int(os.environ.get("DIAGNOSE_ESCALATE_AFTER", "8"))
 
 
-def _detect_machine(query: str) -> str | None:
+def _get_machine_names() -> list[str]:
+    return db.list_machines()
+
+
+def _detect_machine(query: str, machine_names: list[str]) -> str | None:
     q = query.lower()
-    for phrases, name in _MACHINE_DISPLAY:
-        if any(p in q for p in phrases):
+    for name in machine_names:
+        if name.lower() in q:
             return name
     return None
 
 
-def _valid_machine(name: str | None) -> str | None:
-    """Return the name only if it matches a known machine, else None."""
-    return name if name in _MACHINE_NAMES else None
+def _valid_machine(name: str | None, machine_names: list[str]) -> str | None:
+    return name if name in machine_names else None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -306,14 +297,15 @@ def api_diagnose_start(question: str = Form(...)):
         question, is_safety_critical=bool(hazard), hazard_type=hazard
     )
 
-    machine = _detect_machine(question)
+    machine_names = _get_machine_names()
+    machine = _detect_machine(question, machine_names)
     result = rag.diagnose_step(
         question, history=[], session=fsm,
-        machine=machine, machine_options=_MACHINE_NAMES,
+        machine=machine, machine_options=machine_names,
     )
 
     # The agent may identify the machine from the description on turn 1.
-    machine = machine or _valid_machine(result.get("identified_machine"))
+    machine = machine or _valid_machine(result.get("identified_machine"), machine_names)
     fsm["machine"] = machine
     result["machine"] = machine
 
@@ -374,14 +366,15 @@ def api_diagnose_continue(
     db_history.append({"role": "user", "text": answer, "step": len(db_history) + 1})
 
     history.append({"role": "user", "content": answer})
+    machine_names = _get_machine_names()
     result = rag.diagnose_step(
         question, history, session=fsm,
-        machine=machine, machine_options=_MACHINE_NAMES, escalate=escalate,
+        machine=machine, machine_options=machine_names, escalate=escalate,
     )
 
     # Capture the machine once the agent (or the reply) makes it clear.
     if not machine:
-        machine = _valid_machine(result.get("identified_machine")) or _detect_machine(answer)
+        machine = _valid_machine(result.get("identified_machine"), machine_names) or _detect_machine(answer, machine_names)
         session["machine"] = machine
         fsm["machine"] = machine
         result["machine"] = machine

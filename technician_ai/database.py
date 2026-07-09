@@ -197,31 +197,21 @@ def list_all_documents(limit: int = 20) -> list[dict]:
         conn.close()
 
 
-# Maps phrases a technician might say → substrings that must appear in manual_title.
-# Checked case-insensitively against the query. First match wins.
-_MACHINE_TITLE_FILTERS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
-    (("glass loading",),                          ("glass loading",)),
-    (("edge trimming",),                          ("edge trimming",)),
-    (("corner wrapping",),                        ("corner wrapping",)),
-    (("busbar tab lifting", "busbar lifting", "tab lifting", "busbar leads lifting"),
-                                                  ("busbar tab lifting", "ILM-T-PostLam-WI-54068")),
-    (("busbar soldering",),                       ("busbar soldering",)),
-    (("all in one soldering", "all-in-one soldering", "soldering stringer", "04_01"),
-                                                  ("all in one soldering", "04_01")),
-    (("junction box soldering",),                 ("junction box soldering",)),
-]
+def list_machines() -> list[str]:
+    """Return distinct machine names extracted from ingested manual chunks."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT json_extract(metadata_json, '$.machine') AS machine "
+            "FROM documents WHERE kind = 'manual_chunk' "
+            "AND json_extract(metadata_json, '$.machine') IS NOT NULL"
+        ).fetchall()
+        return sorted(r["machine"] for r in rows)
+    finally:
+        conn.close()
 
 
-def _detect_manual_filter(query: str) -> tuple[str, ...] | None:
-    """Return title substrings to filter on if a machine name is found in the query."""
-    q = query.lower()
-    for phrases, title_substrings in _MACHINE_TITLE_FILTERS:
-        if any(p in q for p in phrases):
-            return title_substrings
-    return None
-
-
-def search_by_keywords(query: str, k: int = 6) -> list[dict]:
+def search_by_keywords(query: str, k: int = 6, machine: str | None = None) -> list[dict]:
     """Keyword-based fallback retrieval when embeddings are disabled.
 
     Scores each document by how many unique query terms appear in its text,
@@ -250,16 +240,13 @@ def search_by_keywords(query: str, k: int = 6) -> list[dict]:
     finally:
         conn.close()
 
-    # Scope to a specific machine's manual when the query names one.
-    title_filter = _detect_manual_filter(query)
-    if title_filter:
-        scoped = []
-        for r in rows:
-            meta = json.loads(r["metadata_json"])
-            title = meta.get("manual_title", "").lower()
-            if any(f in title for f in title_filter) or r["kind"] != "manual_chunk":
-                scoped.append(r)
-        # Only use scoped rows if they contain actual content; otherwise fall back.
+    # Scope to a specific machine's chunks when one is identified.
+    if machine:
+        scoped = [
+            r for r in rows
+            if r["kind"] != "manual_chunk"
+            or json.loads(r["metadata_json"]).get("machine") == machine
+        ]
         if scoped:
             rows = scoped
 

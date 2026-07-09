@@ -23,6 +23,7 @@ For each chunk, return:
 - topic_path: 2-3 hierarchical labels, broad → narrow, lowercase snake_case (e.g. ["module_rework", "el_inspection"]).
 - entry_type: exactly one of: {types}.
 - title: short, ≤ 8 words, human-readable, captures the chunk's subject.
+- machine: the specific machine this document is about (e.g. "Glass Loading Machine", "Edge Trimming Machine"). Use a short, consistent name — the same document should always produce the same machine name. Set to null if the document is not specific to a single machine.
 
 Strongly prefer reusing topic paths from the "existing topic paths" list when one fits the chunk. Only propose a new path when none of the existing ones apply. Keep the taxonomy small."""
 
@@ -32,6 +33,7 @@ You will receive multiple numbered chunks. For EACH chunk, return:
 - topic_path: 2-3 hierarchical labels, broad → narrow, lowercase snake_case (e.g. ["module_rework", "el_inspection"]).
 - entry_type: exactly one of: {types}.
 - title: short, ≤ 8 words, human-readable, captures the chunk's subject.
+- machine: the specific machine this document is about (e.g. "Glass Loading Machine", "Edge Trimming Machine"). Use a short, consistent name — the same document should always produce the same machine name. Set to null if the document is not specific to a single machine.
 
 Return a JSON object with a "results" array containing one object per chunk, in the same order as the input chunks.
 
@@ -43,8 +45,9 @@ SCHEMA = {
         "topic_path": {"type": "array", "items": {"type": "string"}},
         "entry_type": {"type": "string", "enum": entry_types.ENTRY_TYPES},
         "title": {"type": "string"},
+        "machine": {"type": ["string", "null"]},
     },
-    "required": ["topic_path", "entry_type", "title"],
+    "required": ["topic_path", "entry_type", "title", "machine"],
     "additionalProperties": False,
 }
 
@@ -97,10 +100,12 @@ def tag_content(
     path = [str(p).strip() for p in result.get("topic_path", []) if str(p).strip()][:4]
     if not path:
         path = ["unclassified"]
+    machine = result.get("machine")
     return {
         "topic_path": path,
         "entry_type": result.get("entry_type") or "unknown",
         "title": (result.get("title") or "").strip()[:120] or "untitled",
+        "machine": machine.strip() if isinstance(machine, str) and machine.strip() else None,
     }
 
 
@@ -108,10 +113,12 @@ def _normalize_tag(result: dict) -> dict:
     path = [str(p).strip() for p in result.get("topic_path", []) if str(p).strip()][:4]
     if not path:
         path = ["unclassified"]
+    machine = result.get("machine")
     return {
         "topic_path": path,
         "entry_type": result.get("entry_type") or "unknown",
         "title": (result.get("title") or "").strip()[:120] or "untitled",
+        "machine": machine.strip() if isinstance(machine, str) and machine.strip() else None,
     }
 
 
