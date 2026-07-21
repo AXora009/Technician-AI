@@ -42,6 +42,14 @@ def _valid_machine(name: str | None, machine_names: list[str]) -> str | None:
     return name if name in machine_names else None
 
 
+def _safe_manual_filename(name: str) -> str:
+    """Strip any directory components so a caller-supplied name can't escape manuals/."""
+    safe = Path(name).name
+    if not safe or safe in (".", ".."):
+        raise HTTPException(status_code=400, detail="invalid filename")
+    return safe
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
@@ -124,11 +132,12 @@ async def ingest_endpoint(file: UploadFile = File(...)):
             status_code=400,
             detail=f"unsupported file type {ext} (supported: {', '.join(sorted(ingest.SUPPORTED_EXTS))})",
         )
-    dest = Path("manuals") / file.filename
+    filename = _safe_manual_filename(file.filename)
+    dest = Path("manuals") / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
     chunks = ingest.ingest_file(dest)
-    return JSONResponse({"filename": file.filename, "chunks": chunks})
+    return JSONResponse({"filename": filename, "chunks": chunks})
 
 
 @app.get("/knowledge")
@@ -216,11 +225,12 @@ async def api_ingest(file: UploadFile = File(...)):
             status_code=400,
             detail=f"unsupported file type {ext}",
         )
-    dest = Path("manuals") / file.filename
+    filename = _safe_manual_filename(file.filename)
+    dest = Path("manuals") / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
     chunks = ingest.ingest_file(dest)
-    return {"filename": file.filename, "chunks": chunks}
+    return {"filename": filename, "chunks": chunks}
 
 
 @app.get("/api/manuals")
@@ -260,10 +270,11 @@ def download_manual_file(filename: str):
 
 @app.delete("/api/manuals/{title:path}")
 def api_delete_manual(title: str):
+    safe_title = _safe_manual_filename(title)
     deleted = db.delete_manual(title)
     if deleted == 0:
         raise HTTPException(status_code=404, detail="manual not found")
-    file_path = Path("manuals") / title
+    file_path = Path("manuals") / safe_title
     for ext in (".pdf", ".pptx", ".docx", ".xlsx", ".xls"):
         candidate = file_path.with_suffix(ext)
         if candidate.exists():

@@ -472,8 +472,8 @@ def delete_manual(title: str) -> int:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT id FROM documents WHERE metadata_json LIKE ?",
-            (f'%"manual_title": "{title}"%',)
+            "SELECT id FROM documents WHERE json_extract(metadata_json, '$.manual_title') = ?",
+            (title,)
         ).fetchall()
         ids = [r["id"] for r in rows]
         if ids:
