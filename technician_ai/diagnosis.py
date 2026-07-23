@@ -72,6 +72,48 @@ _SAFETY_DOOR_PATTERNS = [
     ]
 ]
 
+# A technician reporting that ALL/EVERY/BOTH of several parallel components
+# failed the same way at the same time (e.g. "all three lamps went dark",
+# "every ribbon holder dropped") is a classic common-cause signature — it
+# points at a shared upstream supply (power, breaker, fuse, control circuit)
+# at least as strongly as it points at any single component. NOTE: like every
+# other detector in this file, this is English-only pattern matching; it will
+# not fire on an equivalent report phrased in Chinese or another language.
+_COMMON_CAUSE_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"\ball\b(?:\s+\w+){0,4}\s+(?:go(?:es)?|went|are|turned?|came)\s+(?:black|dark|dead|out|off|down)\b",
+        r"\ball\s+of\s+(?:them|it|the\s+\w+)\s+(?:are|is|went|go(?:es)?|failed|stopped|tripped)\b",
+        r"\bevery\s+(?:one|single)?\s*\w*\s+(?:is|are|went|goes|failed|stopped|tripped)\s+(?:black|dark|dead|out|off|down)?\b",
+        r"\beach\s+(?:one|of them)\b(?:\s+\w+){0,3}\s+(?:black|dark|dead|out|off|down|failed|stopped|tripped)\b",
+        r"\bboth\b(?:\s+\w+){0,4}\s+(?:are|is|went|goes|failed|stopped|tripped)\b",
+        r"\ball\s+(?:two|three|four|five|six|seven|eight)\b(?:\s+\w+){0,3}\s+(?:black|dark|dead|out|off|down|fail|failed|stop|stopped|trip|tripped|blow|blown)\b",
+        r"\bnone\s+of\s+(?:them|the\s+\w+)\s+(?:are|is|work|working|on)\b",
+    ]
+]
+
+# Language indicating the shared upstream supply/circuit feeding the failed
+# components has actually been checked or discussed, rather than jumping
+# straight to a single-component conclusion.
+_SHARED_SUPPLY_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"\bbreaker\b",
+        r"\bfuse\b",
+        r"\bcircuit\b",
+        r"\bpower suppl(y|ies)\b",
+        r"\bvoltage\b",
+        r"\btransformer\b",
+        r"\bcontactor\b",
+        r"\brelay\b",
+        r"\bincoming power\b",
+        r"\bmains\b",
+        r"\belectrical (feed|panel|cabinet)\b",
+        r"\bdisconnect\b",
+        r"\bdistribution panel\b",
+        r"\b(shared|common|same) (power|supply|circuit)\b",
+        r"\bupstream\b",
+    ]
+]
+
 # ---------------------------------------------------------------------------
 # Evidence quality classification
 # ---------------------------------------------------------------------------
@@ -138,8 +180,19 @@ def high_confidence_warranted(session: dict) -> bool:
     Requires at least one CONFIRMED observation in the evidence log.
     APPROXIMATE, SUSPECTED, and HEARSAY observations alone do not warrant
     HIGH confidence.
+
+    A confirmed observation that describes multiple parallel components
+    failing the same way at once (has_common_cause_signal) does not, by
+    itself, warrant HIGH confidence for a single-component root cause —
+    that pattern is a classic sign of a shared upstream cause (power,
+    breaker, fuse, control circuit). It only counts once the shared supply
+    has also been checked (upstream_supply_checked).
     """
-    return bool(session.get("has_confirmed_evidence", False))
+    if not session.get("has_confirmed_evidence", False):
+        return False
+    if session.get("has_common_cause_signal") and not session.get("upstream_supply_checked"):
+        return False
+    return True
 
 
 _SAFETY_CONFIRMED_PATTERNS = [
@@ -254,6 +307,11 @@ def new_session(question, is_safety_critical=False, hazard_type=None):
         # Evidence quality tracking
         "evidence_log": [],          # list of quality strings per technician turn
         "has_confirmed_evidence": False,
+        # Common-cause tracking: a confirmed "all/every/both X failed together"
+        # observation doesn't warrant HIGH confidence on a single component
+        # until the shared upstream supply has also been checked.
+        "has_common_cause_signal": False,
+        "upstream_supply_checked": False,
     }
 
 
@@ -318,6 +376,13 @@ def advance_state(session, llm_response, technician_answer):
         s.setdefault("evidence_log", []).append(quality)
         if quality == "CONFIRMED":
             s["has_confirmed_evidence"] = True
+        if not s["has_common_cause_signal"]:
+            s["has_common_cause_signal"] = _matches_any(
+                _COMMON_CAUSE_PATTERNS, technician_answer
+            )
+
+    if not s["upstream_supply_checked"]:
+        s["upstream_supply_checked"] = _matches_any(_SHARED_SUPPLY_PATTERNS, combined_text)
 
     # 4. Count symptoms gathered from observable questions.
     if _matches_any(_OBSERVABLE_QUESTION_PATTERNS, llm_response):
@@ -369,6 +434,20 @@ def check_resolution_allowed(session):
             False,
             "[FSM OVERRIDE] A safety door issue is present. You must ask whether any "
             "obstruction or foreign object is blocking the door before concluding."
+        )
+
+    # Gate 5b: common-cause signal detected but the shared upstream supply
+    # (power/breaker/circuit) has not been checked yet.
+    if session.get("has_common_cause_signal") and not session.get("upstream_supply_checked"):
+        return (
+            False,
+            "[FSM OVERRIDE] The technician described multiple parallel components "
+            "failing the same way at the same time (e.g. all lamps, all units, both "
+            "sides). That pattern is a classic sign of a shared upstream cause (power "
+            "supply, breaker, fuse, or control circuit) at least as much as it is a "
+            "sign of individual component failure. Before naming a specific component "
+            "as the root cause, ask the technician to check the shared power/breaker/"
+            "circuit feeding those components.",
         )
 
     # Gate 6: evidence quality — all observations uncertain (non-safety sessions).
@@ -430,6 +509,23 @@ def get_state_prompt_addition(session):
             "foreign object, pallet, or packaging is blocking the door."
         )
 
+    # Common-cause signal detected but shared upstream supply not yet checked
+    # (any non-terminal state).
+    if (
+        session.get("has_common_cause_signal")
+        and not session.get("upstream_supply_checked")
+        and state != STATE_RESOLVED
+    ):
+        blocks.append(
+            "[FSM OVERRIDE] The technician reported multiple parallel components "
+            "failing the same way at the same time (e.g. all lamps, all units, both "
+            "sides). This points toward a shared upstream cause (power supply, "
+            "breaker, fuse, control circuit) as much as it does an individual "
+            "component defect. Before concluding a single component is the root "
+            "cause, ask about the shared power/breaker/circuit feeding those "
+            "components."
+        )
+
     # Evidence quality summary — injected every non-trivial turn.
     evidence_log = session.get("evidence_log", [])
     if evidence_log:
@@ -447,8 +543,15 @@ def get_state_prompt_addition(session):
         if hearsay:
             parts.append(f"{hearsay} HEARSAY")
         quality_line = ", ".join(parts) if parts else "none yet"
-        if session.get("has_confirmed_evidence"):
+        if high_confidence_warranted(session):
             verdict = "HIGH confidence is warranted if evidence directly explains symptom."
+        elif session.get("has_confirmed_evidence"):
+            verdict = (
+                "A CONFIRMED observation exists, but it describes multiple parallel "
+                "components failing the same way at once — HIGH confidence is NOT "
+                "warranted until the shared upstream supply (power/breaker/circuit) "
+                "has also been checked."
+            )
         else:
             verdict = (
                 "No CONFIRMED observation yet — HIGH confidence is NOT warranted. "

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,11 +31,44 @@ def _get_machine_names() -> list[str]:
     return db.list_machines()
 
 
+# Chinese/colloquial terms that map UNAMBIGUOUSLY to exactly one machine name
+# as currently ingested. Deliberately does NOT include ambiguous terms (e.g. a
+# bare "焊机" / "soldering machine", or "串焊机" / "划焊一体机", which in this
+# plant's usage have been seen referring to more than one of the soldering
+# machines) — those must fall through undetected so the agent asks the
+# technician to confirm which one, per the "MACHINE FIRST" rule in
+# retrieval.py, rather than silently guessing wrong.
+_MACHINE_ALIASES: dict[str, str] = {
+    "玻璃上料机": "Glass Loading Machine",
+    "玻璃机": "Glass Loading Machine",
+    "边缘打磨机": "Edge Trimming Machine",
+    "切边机": "Edge Trimming Machine",
+    "包角机": "Corner Wrapping Machine",
+    "包边机": "Corner Wrapping Machine",
+    "封边胶带机": "Corner Wrapping Machine",
+    "汇流带理料机": "Busbar Tab Lifting Machine",
+    "接线盒焊接机": "Junction Box Soldering Machine",
+}
+
+
+def _normalize_machine_text(text: str) -> str:
+    """Lowercase and strip characters that shouldn't affect a machine-name
+    match (hyphens/underscores, extra whitespace) — so "All in one soldering
+    machine" matches the canonical "All-in-One Soldering Machine"."""
+    text = text.lower()
+    text = re.sub(r"[-_]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def _detect_machine(query: str, machine_names: list[str]) -> str | None:
-    q = query.lower()
+    q_norm = _normalize_machine_text(query)
     for name in machine_names:
-        if name.lower() in q:
+        if _normalize_machine_text(name) in q_norm:
             return name
+    for alias, canonical in _MACHINE_ALIASES.items():
+        if alias in query and canonical in machine_names:
+            return canonical
     return None
 
 
