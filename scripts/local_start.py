@@ -13,6 +13,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
+# Messages are bilingual; without this, Windows output redirected to a file or
+# pipe uses the legacy code page and crashes on the Chinese text.
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(ROOT))
 
 ENV_FILE = ROOT / ".env"

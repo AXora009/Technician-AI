@@ -1,0 +1,4 @@
+# Launch scripts must keep their native line endings to run on the target OS.
+*.command text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf

@@ -26,3 +26,4 @@ qr_ngrok.png
 temp/
 data/workspaces.json
 data/workspaces/
+dist/
