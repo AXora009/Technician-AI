@@ -19,11 +19,11 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Prepare build tools
@@ -40,7 +40,7 @@ jobs:
       - name: Smoke test (extracted zip)
         shell: bash
         run: bash packaging/smoke_test.sh "$RUNNER_TEMP/test/TechnicianAI" python/python.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: TechnicianAI-windows
           path: ${{ runner.temp }}/pkg/TechnicianAI-windows.zip
@@ -64,8 +64,8 @@ jobs:
             zip: TechnicianAI-mac-intel.zip
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Prepare build tools
@@ -80,7 +80,7 @@ jobs:
           ditto -x -k "dist/${{ matrix.zip }}" "$RUNNER_TEMP/test"
           test -x "$RUNNER_TEMP/test/TechnicianAI/start.command"
           bash packaging/smoke_test.sh "$RUNNER_TEMP/test/TechnicianAI" python/bin/python3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.zip }}
           path: dist/${{ matrix.zip }}
