@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import workspaces
+
 EMBED_DIM = int(os.environ.get("EMBED_DIM", "512"))
 DB_PATH = os.environ.get("TECHNICIAN_AI_DB", "./data/tech.db")
 
@@ -23,9 +25,18 @@ def _unpack(blob: bytes) -> np.ndarray:
     return np.frombuffer(blob, dtype=np.float32)
 
 
+_initialized_paths: set[str] = set()
+
+
 def connect() -> sqlite3.Connection:
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    # Inside a request the workspace decides which DB file to use.
+    ws_path = workspaces.current_db_path()
+    path = str(ws_path) if ws_path else DB_PATH
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if ws_path and path not in _initialized_paths:
+        _initialized_paths.add(path)
+        init_db()
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     return conn
 

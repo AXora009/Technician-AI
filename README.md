@@ -18,11 +18,25 @@ Pulls answers from manufacturer manuals — and captures the field-learned trick
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](#contributing)
 [![GitHub stars](https://img.shields.io/github/stars/AXora009/Technician-AI?style=social)](https://github.com/AXora009/Technician-AI)
 
-[Quickstart](#quickstart) · [Agent Design](#agent-design) · [Key Capabilities](#key-capabilities) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[Download](#download--run-windows) · [Quickstart](#quickstart) · [Agent Design](#agent-design) · [Key Capabilities](#key-capabilities) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
 </div>
 
 ---
+
+## Download & run (Windows)
+
+No Python, Node.js, or command line needed. / 不需要安装 Python、Node.js，也不用命令行。
+
+1. **[Download TechnicianAI-windows.zip](https://github.com/AXora009/Technician-AI/releases/latest/download/TechnicianAI-windows.zip)**, then right-click it → **Extract All**. / 下载后右键 →「全部解压」。
+2. Open the extracted folder and double-click **`start.bat`**. / 打开解压后的文件夹，双击 `start.bat`。
+   - If Windows shows "Windows protected your PC", click **More info → Run anyway**. / 如果弹出"已保护你的电脑"，点「更多信息」→「仍要运行」。
+   - If the firewall asks, tick **Private networks** and click **Allow** (needed for phones). / 如果防火墙弹窗，勾选「专用网络」并点「允许」（手机访问需要）。
+3. First run only: paste a free Gemini API key from **https://aistudio.google.com/apikey**. / 仅第一次：粘贴免费的 Gemini API key（在上面的网址申请）。
+4. Your browser opens automatically. Upload your manuals (PDF / Word / Excel / PPT) and start asking. / 浏览器会自动打开，上传手册即可提问。
+   - **Phone:** connect to the same WiFi and scan the QR code shown in the window. / **手机：**连同一个 WiFi，扫窗口里的二维码。
+
+Your manuals stay on your computer; question text and the relevant manual excerpts are sent to Google Gemini to generate answers. Keep the window open while using it; close it to stop. / 手册保存在你自己的电脑上；提问时，问题和相关的手册片段会发给 Google Gemini 生成回答。使用期间保持窗口打开，关闭窗口即停止。
 
 ## The problem
 

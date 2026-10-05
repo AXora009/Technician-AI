@@ -92,6 +92,13 @@ const translations = {
     // Language picker
     lang_picker_title: "Choose your language",
     lang_picker_subtitle: "You can change this later in settings",
+
+    // Workspace access
+    ws_title: "Enter your access code",
+    ws_subtitle: "Your manuals and history are private to your workspace",
+    ws_placeholder: "Access code",
+    ws_submit: "Enter",
+    ws_invalid: "Invalid access code",
     lang_en: "English",
     lang_zh: "中文",
   },
@@ -182,6 +189,13 @@ const translations = {
     // Language picker
     lang_picker_title: "选择您的语言",
     lang_picker_subtitle: "您可以稍后在设置中更改",
+
+    // Workspace access
+    ws_title: "请输入访问码",
+    ws_subtitle: "您的手册和记录只在您自己的空间中可见",
+    ws_placeholder: "访问码",
+    ws_submit: "进入",
+    ws_invalid: "访问码无效",
     lang_en: "English",
     lang_zh: "中文",
   },

@@ -24,3 +24,5 @@ server_out*.txt
 server_err*.txt
 qr_ngrok.png
 temp/
+data/workspaces.json
+data/workspaces/

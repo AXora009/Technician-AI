@@ -19,8 +19,36 @@ from . import diagnosis as diagnosis_fsm
 from . import ingestion as ingest
 from . import retrieval as rag
 from . import safety as safety_gate
+from . import workspaces
 
 _diag_sessions: dict[str, dict] = {}
+
+WORKSPACE_COOKIE = "tech_ai_ws"
+_PUBLIC_API = {"/api/login", "/api/logout"}
+_PROTECTED_PREFIXES = ("/api/", "/ask", "/feedback/", "/ingest", "/knowledge", "/topics", "/manuals/")
+
+
+class WorkspaceMiddleware:
+    """Resolve the workspace from the access-code cookie; reject data routes without one."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope["path"]
+        ws = workspaces.lookup(Request(scope).cookies.get(WORKSPACE_COOKIE))
+        if ws is None and path not in _PUBLIC_API and path.startswith(_PROTECTED_PREFIXES):
+            response = JSONResponse({"detail": "workspace code required"}, status_code=401)
+            await response(scope, receive, send)
+            return
+        token = workspaces.set_current(ws)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            workspaces.reset_current(token)
 
 # After this many assistant turns without a resolution, nudge the agent to
 # conclude with an escalation recommendation (soft cap, configurable).
@@ -97,6 +125,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Technician AI", lifespan=lifespan)
+app.add_middleware(WorkspaceMiddleware)
 
 _static_dir = PROJECT_ROOT / "static"
 
@@ -167,7 +196,7 @@ async def ingest_endpoint(file: UploadFile = File(...)):
             detail=f"unsupported file type {ext} (supported: {', '.join(sorted(ingest.SUPPORTED_EXTS))})",
         )
     filename = _safe_manual_filename(file.filename)
-    dest = Path("manuals") / filename
+    dest = workspaces.manuals_dir() / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
     chunks = ingest.ingest_file(dest)
@@ -185,6 +214,35 @@ def topics():
 
 
 # --- JSON API for React SPA ---
+
+class LoginRequest(BaseModel):
+    code: str
+
+
+@app.post("/api/login")
+def api_login(body: LoginRequest):
+    code = body.code.strip()
+    ws = workspaces.lookup(code)
+    if ws is None:
+        raise HTTPException(status_code=401, detail="invalid code")
+    response = JSONResponse({"name": ws["name"]})
+    response.set_cookie(
+        WORKSPACE_COOKIE, code, max_age=60 * 60 * 24 * 180, httponly=True, samesite="lax"
+    )
+    return response
+
+
+@app.post("/api/logout")
+def api_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(WORKSPACE_COOKIE)
+    return response
+
+
+@app.get("/api/me")
+def api_me():
+    return {"name": workspaces.current()["name"]}
+
 
 @app.post("/api/ask")
 def api_ask(question: str = Form(...)):
@@ -260,7 +318,7 @@ async def api_ingest(file: UploadFile = File(...)):
             detail=f"unsupported file type {ext}",
         )
     filename = _safe_manual_filename(file.filename)
-    dest = Path("manuals") / filename
+    dest = workspaces.manuals_dir() / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
     chunks = ingest.ingest_file(dest)
@@ -274,8 +332,8 @@ def api_manuals():
 
 @app.get("/api/manuals/files")
 def api_manuals_files():
-    """List all files physically present in the manuals/ directory."""
-    manuals_dir = PROJECT_ROOT / "manuals"
+    """List all files physically present in the workspace's manuals directory."""
+    manuals_dir = workspaces.manuals_dir()
     if not manuals_dir.exists():
         return {"files": []}
     files = []
@@ -291,8 +349,8 @@ def api_manuals_files():
 
 @app.get("/manuals/file/{filename:path}")
 def download_manual_file(filename: str):
-    """Serve a file from the manuals/ directory for download or inline viewing."""
-    manuals_dir = (PROJECT_ROOT / "manuals").resolve()
+    """Serve a file from the workspace's manuals directory for download or inline viewing."""
+    manuals_dir = workspaces.manuals_dir().resolve()
     file_path = (manuals_dir / filename).resolve()
     if not str(file_path).startswith(str(manuals_dir)):
         raise HTTPException(status_code=403, detail="access denied")
@@ -308,7 +366,7 @@ def api_delete_manual(title: str):
     deleted = db.delete_manual(title)
     if deleted == 0:
         raise HTTPException(status_code=404, detail="manual not found")
-    file_path = Path("manuals") / safe_title
+    file_path = workspaces.manuals_dir() / safe_title
     for ext in (".pdf", ".pptx", ".docx", ".xlsx", ".xls"):
         candidate = file_path.with_suffix(ext)
         if candidate.exists():
@@ -364,6 +422,7 @@ def api_diagnose_start(question: str = Form(...)):
         "db_history": db_history,
         "all_doc_ids": list(doc_ids),
         "fsm": fsm,
+        "workspace_db": str(workspaces.current_db_path()),
     }
 
     db.upsert_diagnose_session(
@@ -395,7 +454,7 @@ def api_diagnose_continue(
     if not answer:
         raise HTTPException(status_code=400, detail="empty answer")
     session = _diag_sessions.get(session_id)
-    if session is None:
+    if session is None or session.get("workspace_db") != str(workspaces.current_db_path()):
         raise HTTPException(status_code=400, detail="session not found")
 
     question = session["question"]
