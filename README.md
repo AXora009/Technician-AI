@@ -34,7 +34,7 @@ No Python, Node.js, or command line needed. / 不需要安装 Python、Node.js�
 2. Open the extracted folder and double-click **`start.bat`**. / 打开解压后的文件夹，双击 `start.bat`。
    - If Windows shows "Windows protected your PC", click **More info → Run anyway**. / 如果弹出"已保护你的电脑"，点「更多信息」→「仍要运行」。
    - If the firewall asks, tick **Private networks** and click **Allow** (needed for phones). / 如果防火墙弹窗，勾选「专用网络」并点「允许」（手机访问需要）。
-3. First run only: paste a free Gemini API key from **https://aistudio.google.com/apikey**. / 仅第一次：粘贴免费的 Gemini API key（在上面的网址申请）。
+3. First run only: paste an API key from **Gemini, Claude, or OpenAI** — the provider is detected automatically. No key? Get a free Gemini key at **https://aistudio.google.com/apikey**. / 仅第一次：粘贴 Gemini、Claude 或 OpenAI 任意一家的 API key，会自动识别。没有的话，可以在上面的网址免费申请 Gemini key。
 4. Your browser opens automatically. Upload your manuals (PDF / Word / Excel / PPT) and start asking. / 浏览器会自动打开，上传手册即可提问。
    - **Phone:** connect to the same WiFi and scan the QR code shown in the window. / **手机：**连同一个 WiFi，扫窗口里的二维码。
 
@@ -47,9 +47,9 @@ No Python, Node.js, or command line needed. / 不需要安装 Python、Node.js�
    - Click **Done**, open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to "start.command", and confirm. / 点「完成」，打开「系统设置 → 隐私与安全性」，往下滑，在 start.command 旁边点「仍要打开」并确认。
    - On macOS 14 or older you can instead right-click `start.command` → **Open** → **Open**. / macOS 14 及更早版本也可以：右键 `start.command` →「打开」→「打开」。
    - If asked to let Terminal access a folder, or Python to accept incoming connections, click **Allow**. / 如果提示"终端"想访问文件夹，或 Python 想接受传入连接，点「允许」。
-3. Steps 3–4 are the same as Windows: paste a Gemini key once, then use it in the browser or scan the QR code with your phone. / 后面和 Windows 一样：第一次粘贴 Gemini key，然后在浏览器里使用，或用手机扫码。
+3. Steps 3–4 are the same as Windows: paste an API key once, then use it in the browser or scan the QR code with your phone. / 后面和 Windows 一样：第一次粘贴 API key，然后在浏览器里使用，或用手机扫码。
 
-Your manuals stay on your computer; question text and the relevant manual excerpts are sent to Google Gemini to generate answers. Keep the window open while using it; close it to stop. / 手册保存在你自己的电脑上；提问时，问题和相关的手册片段会发给 Google Gemini 生成回答。使用期间保持窗口打开，关闭窗口即停止。
+Your manuals stay on your computer; question text and the relevant manual excerpts are sent to the AI provider whose key you entered to generate answers. Keep the window open while using it; close it to stop. / 手册保存在你自己的电脑上；提问时，问题和相关的手册片段会发给你所用 key 对应的 AI 服务来生成回答。使用期间保持窗口打开，关闭窗口即停止。
 
 ## The problem
 

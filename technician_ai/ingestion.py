@@ -98,13 +98,15 @@ def _vision_describe_page(pdf_path: Path, page_num: int) -> str:
             api_key=os.environ.get("OPENAI_API_KEY"),
             base_url=os.environ.get("LLM_BASE_URL") or None,
         )
+        # Current OpenAI models reject max_tokens; OpenAI-compatible servers may only know it.
+        token_param = "max_tokens" if os.environ.get("LLM_BASE_URL") else "max_completion_tokens"
         response = client.chat.completions.create(
             model=model,
-            max_tokens=2048,
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
                 {"type": "text", "text": prompt},
             ]}],
+            **{token_param: 2048},
         )
         return response.choices[0].message.content.strip()
 

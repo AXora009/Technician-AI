@@ -1,7 +1,7 @@
 """Start Technician AI on this computer (run by start.bat in the Windows package).
 
-First run asks for a Gemini API key and writes .env; every run opens the browser
-already logged in to the local workspace.
+First run asks for an API key (Gemini, Claude or OpenAI — detected from the key)
+and writes .env; every run opens the browser already logged in to the local workspace.
 """
 import io
 import os
@@ -24,6 +24,57 @@ BUNDLED_KEY_FILE = ROOT / "gemini_key.txt"  # written by packaging/build_windows
 PORT = int(os.environ.get("PORT", "8000"))
 
 
+# Provider settings written to .env. Claude has no embeddings API, so with a
+# Claude key retrieval falls back to keyword search.
+PROVIDERS = {
+    "google": ("Google Gemini", [
+        "LLM_PROVIDER=google",
+        "GOOGLE_API_KEY={key}",
+        "TECHNICIAN_AI_MODEL=gemini-3.1-flash-lite",
+        "EMBED_PROVIDER=google",
+        "EMBED_DIM=512",
+    ]),
+    "anthropic": ("Anthropic Claude", [
+        "LLM_PROVIDER=anthropic",
+        "ANTHROPIC_API_KEY={key}",
+        "TECHNICIAN_AI_MODEL=claude-sonnet-5-5",
+    ]),
+    "openai": ("OpenAI", [
+        "LLM_PROVIDER=openai",
+        "OPENAI_API_KEY={key}",
+        "TECHNICIAN_AI_MODEL=gpt-6.1-sol",
+        "EMBED_PROVIDER=openai",
+        "EMBED_DIM=512",
+    ]),
+}
+COMMON_SETTINGS = [
+    "USE_LLM_TAGGER=false",
+    "USE_VISION_INGEST=true",
+    "VISION_ALL_PAGES=true",
+    "VISION_PAGE_RANGE=1-30",
+]
+
+
+def detect_provider(key: str) -> str | None:
+    if key.startswith("sk-ant-"):
+        return "anthropic"
+    if key.startswith("sk-"):
+        return "openai"
+    if key.startswith(("AIza", "AQ.")):
+        return "google"
+    return None
+
+
+def ask_provider() -> str:
+    print("无法识别这个 key 属于哪一家，请选择 / Which provider is this key from?")
+    print("  1) Google Gemini   2) Anthropic Claude   3) OpenAI")
+    choices = {"1": "google", "2": "anthropic", "3": "openai"}
+    choice = ""
+    while choice not in choices:
+        choice = input("输入 1、2 或 3 后按回车 / Enter 1, 2 or 3: ").strip()
+    return choices[choice]
+
+
 def first_run_setup() -> None:
     if BUNDLED_KEY_FILE.exists():
         key = BUNDLED_KEY_FILE.read_text(encoding="utf-8").strip()
@@ -31,29 +82,20 @@ def first_run_setup() -> None:
         print("=" * 60)
         print(" 首次使用设置 / First-time setup")
         print("=" * 60)
-        print("需要一个免费的 Google Gemini API key。")
-        print("You need a free Google Gemini API key:")
+        print("需要一个 AI 的 API key，Gemini、Claude 或 OpenAI 任意一家都可以。")
+        print("You need an API key from Gemini, Claude, or OpenAI.")
+        print("没有的话，可以免费申请 Gemini key / No key? Get a free Gemini key:")
         print("  https://aistudio.google.com/apikey")
         print()
         key = ""
         while not key:
             key = input("粘贴 API key 后按回车 / Paste the key and press Enter: ").strip()
-    ENV_FILE.write_text(
-        "\n".join([
-            "LLM_PROVIDER=google",
-            f"GOOGLE_API_KEY={key}",
-            "TECHNICIAN_AI_MODEL=gemini-3.1-flash-lite",
-            "USE_LLM_TAGGER=false",
-            "USE_VISION_INGEST=true",
-            "VISION_ALL_PAGES=true",
-            "VISION_PAGE_RANGE=1-30",
-            "EMBED_PROVIDER=google",
-            "EMBED_DIM=512",
-            "",
-        ]),
-        encoding="utf-8",
-    )
-    print("已保存 / Saved. (要更换 key，删除 .env 文件后重新运行 / delete .env to change it)")
+    provider = detect_provider(key) or ask_provider()
+    name, settings = PROVIDERS[provider]
+    lines = [s.format(key=key) for s in settings] + COMMON_SETTINGS
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"已保存，使用 {name} / Saved, using {name}.")
+    print("(要更换 key，删除 .env 文件和 data 文件夹后重新运行 / to change it, delete .env and the data folder)")
     print()
 
 

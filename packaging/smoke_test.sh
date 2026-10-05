@@ -6,10 +6,10 @@ cd "$1"
 PY="$2"
 PORT=8790
 
-"$PY" -c "import technician_ai.api, fitz, numpy, pypdf, docx, openpyxl, pptx, google.genai, uvicorn; print('imports ok')"
+"$PY" -c "import technician_ai.api, fitz, numpy, pypdf, docx, openpyxl, pptx, google.genai, anthropic, openai, uvicorn; print('imports ok')"
 
 # First run: answer the key prompt with a fake key. BROWSER=true makes the browser launch a no-op.
-echo "fake-key-for-smoke-test" | PORT=$PORT BROWSER=true "$PY" scripts/local_start.py > server.log 2>&1 &
+echo "AIza-fake-key-for-smoke-test" | PORT=$PORT BROWSER=true "$PY" scripts/local_start.py > server.log 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null || true; cat server.log' EXIT
 
@@ -18,7 +18,7 @@ for _ in $(seq 60); do
   sleep 2
 done
 
-grep -q "GOOGLE_API_KEY=fake-key-for-smoke-test" .env
+grep -q "GOOGLE_API_KEY=AIza-fake-key-for-smoke-test" .env
 CODE=$("$PY" -c "import json; print(next(iter(json.load(open('data/workspaces.json')))))")
 
 status() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
