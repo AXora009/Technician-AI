@@ -18,15 +18,17 @@ Pulls answers from manufacturer manuals — and captures the field-learned trick
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](#contributing)
 [![GitHub stars](https://img.shields.io/github/stars/AXora009/Technician-AI?style=social)](https://github.com/AXora009/Technician-AI)
 
-[Download](#download--run-windows) · [Quickstart](#quickstart) · [Agent Design](#agent-design) · [Key Capabilities](#key-capabilities) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[Download](#download--run) · [Quickstart](#quickstart) · [Agent Design](#agent-design) · [Key Capabilities](#key-capabilities) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
 </div>
 
 ---
 
-## Download & run (Windows)
+## Download & run
 
 No Python, Node.js, or command line needed. / 不需要安装 Python、Node.js，也不用命令行。
+
+### Windows
 
 1. **[Download TechnicianAI-windows.zip](https://github.com/AXora009/Technician-AI/releases/latest/download/TechnicianAI-windows.zip)**, then right-click it → **Extract All**. / 下载后右键 →「全部解压」。
 2. Open the extracted folder and double-click **`start.bat`**. / 打开解压后的文件夹，双击 `start.bat`。
@@ -35,6 +37,17 @@ No Python, Node.js, or command line needed. / 不需要安装 Python、Node.js�
 3. First run only: paste a free Gemini API key from **https://aistudio.google.com/apikey**. / 仅第一次：粘贴免费的 Gemini API key（在上面的网址申请）。
 4. Your browser opens automatically. Upload your manuals (PDF / Word / Excel / PPT) and start asking. / 浏览器会自动打开，上传手册即可提问。
    - **Phone:** connect to the same WiFi and scan the QR code shown in the window. / **手机：**连同一个 WiFi，扫窗口里的二维码。
+
+### Mac
+
+1. Download the zip for your Mac, then double-click it to unzip. / 下载对应你电脑的版本，双击解压。
+   - **[Apple silicon (M1/M2/M3/M4…)](https://github.com/AXora009/Technician-AI/releases/latest/download/TechnicianAI-mac-apple-silicon.zip)** — most Macs from 2020 on. / 2020 年以后的大多数 Mac。
+   - **[Intel](https://github.com/AXora009/Technician-AI/releases/latest/download/TechnicianAI-mac-intel.zip)** — not sure? Apple menu → **About This Mac**: "Chip: Apple…" means Apple silicon, "Processor: Intel…" means Intel. / 不确定？左上角苹果菜单 →「关于本机」：显示"芯片 Apple"选第一个，显示"处理器 Intel"选第二个。
+2. Double-click **`start.command`** in the unzipped folder. The first time, macOS blocks it because the app isn't from the App Store: / 双击解压后文件夹里的 `start.command`。第一次会被 macOS 拦截（因为不是 App Store 应用）：
+   - Click **Done**, open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to "start.command", and confirm. / 点「完成」，打开「系统设置 → 隐私与安全性」，往下滑，在 start.command 旁边点「仍要打开」并确认。
+   - On macOS 14 or older you can instead right-click `start.command` → **Open** → **Open**. / macOS 14 及更早版本也可以：右键 `start.command` →「打开」→「打开」。
+   - If asked to let Terminal access a folder, or Python to accept incoming connections, click **Allow**. / 如果提示"终端"想访问文件夹，或 Python 想接受传入连接，点「允许」。
+3. Steps 3–4 are the same as Windows: paste a Gemini key once, then use it in the browser or scan the QR code with your phone. / 后面和 Windows 一样：第一次粘贴 Gemini key，然后在浏览器里使用，或用手机扫码。
 
 Your manuals stay on your computer; question text and the relevant manual excerpts are sent to Google Gemini to generate answers. Keep the window open while using it; close it to stop. / 手册保存在你自己的电脑上；提问时，问题和相关的手册片段会发给 Google Gemini 生成回答。使用期间保持窗口打开，关闭窗口即停止。
 

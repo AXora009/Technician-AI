@@ -1,0 +1,91 @@
+# Builds the download-and-run packages (Windows, Mac Apple silicon, Mac Intel),
+# smoke-tests each one on its own OS, and attaches them to published releases.
+name: Packages
+
+on:
+  release:
+    types: [published]
+  push:
+    paths:
+      - "packaging/**"
+      - "scripts/local_start.py"
+      - ".github/workflows/package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare build tools
+        run: |
+          python -m venv .venv
+          cd frontend
+          npm ci
+      - name: Build
+        shell: pwsh
+        run: ./packaging/build_windows.ps1 -OutDir "$env:RUNNER_TEMP\pkg"
+      - name: Extract zip
+        shell: pwsh
+        run: Expand-Archive "$env:RUNNER_TEMP\pkg\TechnicianAI-windows.zip" "$env:RUNNER_TEMP\test"
+      - name: Smoke test (extracted zip)
+        shell: bash
+        run: bash packaging/smoke_test.sh "$RUNNER_TEMP/test/TechnicianAI" python/python.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TechnicianAI-windows
+          path: ${{ runner.temp }}/pkg/TechnicianAI-windows.zip
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$RUNNER_TEMP/pkg/TechnicianAI-windows.zip" --clobber
+
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: aarch64
+            zip: TechnicianAI-mac-apple-silicon.zip
+          - runner: macos-15-intel
+            arch: x86_64
+            zip: TechnicianAI-mac-intel.zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare build tools
+        run: cd frontend && npm ci
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash packaging/build_mac.sh ${{ matrix.arch }} ${{ matrix.zip }}
+      - name: Smoke test (extracted zip)
+        run: |
+          mkdir -p "$RUNNER_TEMP/test"
+          ditto -x -k "dist/${{ matrix.zip }}" "$RUNNER_TEMP/test"
+          test -x "$RUNNER_TEMP/test/TechnicianAI/start.command"
+          bash packaging/smoke_test.sh "$RUNNER_TEMP/test/TechnicianAI" python/bin/python3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.zip }}
+          path: dist/${{ matrix.zip }}
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "dist/${{ matrix.zip }}" --clobber
