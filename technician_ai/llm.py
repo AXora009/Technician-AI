@@ -115,12 +115,14 @@ def _chat_openai(
 
     kwargs: dict = dict(
         model=model,
-        max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_message},
         ],
     )
+    # Current OpenAI models reject max_tokens; OpenAI-compatible servers
+    # (LLM_BASE_URL, e.g. Ollama) may only understand the old name.
+    kwargs["max_tokens" if LLM_BASE_URL else "max_completion_tokens"] = max_tokens
 
     if json_schema is not None:
         kwargs["response_format"] = {
