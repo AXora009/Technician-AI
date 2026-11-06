@@ -9,10 +9,13 @@ from pathlib import Path
 
 import numpy as np
 
-from . import workspaces
+from . import machines
 
 EMBED_DIM = int(os.environ.get("EMBED_DIM", "512"))
 DB_PATH = os.environ.get("TECHNICIAN_AI_DB", "./data/tech.db")
+MACHINE_TITLE_BOOST = 0.1  # added to the similarity of the known machine's manuals
+_FAULT_RECORD_TITLE = re.compile(r"fault|eam_", re.IGNORECASE)
+_ALARM_WORD = re.compile(r"alarm|fault|warning|overload|报警|故障|警告", re.IGNORECASE)
 
 
 def _pack(vec: list[float] | None) -> bytes | None:
@@ -25,18 +28,9 @@ def _unpack(blob: bytes) -> np.ndarray:
     return np.frombuffer(blob, dtype=np.float32)
 
 
-_initialized_paths: set[str] = set()
-
-
 def connect() -> sqlite3.Connection:
-    # Inside a request the workspace decides which DB file to use.
-    ws_path = workspaces.current_db_path()
-    path = str(ws_path) if ws_path else DB_PATH
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    if ws_path and path not in _initialized_paths:
-        _initialized_paths.add(path)
-        init_db()
-    conn = sqlite3.connect(path)
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -145,7 +139,21 @@ def insert_documents_batch(
         conn.close()
 
 
-def search_similar(embedding: list[float], k: int = 6) -> list[dict]:
+def _manual_title(row: sqlite3.Row) -> str:
+    return json.loads(row["metadata_json"]).get("manual_title") or ""
+
+
+def search_similar(
+    embedding: list[float],
+    k: int = 6,
+    title_terms: tuple[str, ...] = (),
+    max_fault_records: int | None = None,
+) -> list[dict]:
+    """Return the k nearest documents.
+
+    title_terms: favor manuals with these words in their title.
+    max_fault_records: cap fault-record chunks, which far outnumber manual chunks.
+    """
     conn = connect()
     try:
         rows = conn.execute(
@@ -170,19 +178,68 @@ def search_similar(embedding: list[float], k: int = 6) -> list[dict]:
         if norm == 0:
             continue
         sim = float(np.dot(query, vec / norm))
+        if title_terms and machines.title_matches(_manual_title(r), title_terms):
+            sim += MACHINE_TITLE_BOOST
         scored.append((sim, r))
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
+    results: list[dict] = []
+    fault_records = 0
+    for sim, r in scored:
+        if max_fault_records is not None and _FAULT_RECORD_TITLE.search(_manual_title(r)):
+            if fault_records >= max_fault_records:
+                continue
+            fault_records += 1
+        results.append(
+            {
+                "id": r["id"],
+                "kind": r["kind"],
+                "text": r["text"],
+                "metadata": json.loads(r["metadata_json"]),
+                "score": sim,
+            }
+        )
+        if len(results) == k:
+            break
+    return results
+
+
+def search_exact_codes(patterns: list[str], k: int = 3) -> list[dict]:
+    """Return documents containing a code exactly, for what similarity misses.
+
+    Text about alarms ranks first, so a circuit-diagram label like A710 doesn't
+    beat the alarm table. Then manuals before fault records, then the documents
+    naming a code most.
+    """
+    if not patterns:
+        return []
+    code = re.compile(
+        "|".join(f"(?<![0-9a-z])(?:{p})(?![0-9a-z])" for p in patterns), re.IGNORECASE
+    )
+    conn = connect()
+    try:
+        rows = conn.execute("SELECT id, kind, text, metadata_json FROM documents").fetchall()
+    finally:
+        conn.close()
+
+    found = []
+    for r in rows:
+        count = len(code.findall(r["text"]))
+        if count:
+            is_fault_record = bool(_FAULT_RECORD_TITLE.search(_manual_title(r)))
+            not_about_alarms = not _ALARM_WORD.search(r["text"])
+            found.append((not_about_alarms, is_fault_record, -count, r["id"], r))
+    found.sort(key=lambda x: x[:4])
     return [
         {
             "id": r["id"],
             "kind": r["kind"],
             "text": r["text"],
             "metadata": json.loads(r["metadata_json"]),
-            "score": sim,
+            "score": None,
         }
-        for sim, r in scored[:k]
+        for *_, r in found[:k]
     ]
 
 
@@ -208,28 +265,14 @@ def list_all_documents(limit: int = 20) -> list[dict]:
         conn.close()
 
 
-def list_machines() -> list[str]:
-    """Return distinct machine names extracted from ingested manual chunks."""
-    conn = connect()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT json_extract(metadata_json, '$.machine') AS machine "
-            "FROM documents WHERE kind = 'manual_chunk' "
-            "AND json_extract(metadata_json, '$.machine') IS NOT NULL"
-        ).fetchall()
-        return sorted(r["machine"] for r in rows)
-    finally:
-        conn.close()
-
-
-def search_by_keywords(query: str, k: int = 6, machine: str | None = None) -> list[dict]:
+def search_by_keywords(query: str, k: int = 6, title_terms: tuple[str, ...] = ()) -> list[dict]:
     """Keyword-based fallback retrieval when embeddings are disabled.
 
     Scores each document by how many unique query terms appear in its text,
     then returns the top-k by score. Falls back to most-recent if no matches.
 
-    When the query mentions a specific machine name, retrieval is first scoped
-    to that machine's manual chunks to avoid cross-manual contamination.
+    When title_terms are given, retrieval is first scoped to the manuals with
+    those words in their title to avoid cross-manual contamination.
     """
     _STOPWORDS = {
         "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -252,11 +295,11 @@ def search_by_keywords(query: str, k: int = 6, machine: str | None = None) -> li
         conn.close()
 
     # Scope to a specific machine's chunks when one is identified.
-    if machine:
+    if title_terms:
         scoped = [
             r for r in rows
             if r["kind"] != "manual_chunk"
-            or json.loads(r["metadata_json"]).get("machine") == machine
+            or machines.title_matches(_manual_title(r), title_terms)
         ]
         if scoped:
             rows = scoped

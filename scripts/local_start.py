@@ -1,7 +1,7 @@
 """Start Technician AI on this computer (run by start.bat in the Windows package).
 
 First run asks for an API key (Gemini, Claude or OpenAI — detected from the key)
-and writes .env; every run opens the browser already logged in to the local workspace.
+and writes .env; every run opens the browser.
 """
 import io
 import os
@@ -102,12 +102,7 @@ def first_run_setup() -> None:
 if not ENV_FILE.exists():
     first_run_setup()
 
-from technician_ai import workspaces  # noqa: E402
-
-if not workspaces.list_all():
-    workspaces.create("Local", use_existing_data=True)
-code = next(iter(workspaces.list_all()))
-url = f"http://localhost:{PORT}/?code={code}"
+url = f"http://localhost:{PORT}/"
 
 
 def lan_ip() -> str | None:
@@ -125,8 +120,7 @@ print("Technician AI 已启动 / is running:")
 print(f"  本机 / This computer:  {url}")
 ip = lan_ip()
 if ip:
-    # The access code in the link lets phones on the same WiFi log straight in.
-    lan_url = f"http://{ip}:{PORT}/?code={code}"
+    lan_url = f"http://{ip}:{PORT}/"
     print(f"  手机 / Phone (same WiFi):  {lan_url}")
     try:
         import qrcode

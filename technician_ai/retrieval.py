@@ -8,11 +8,14 @@ from . import database as db
 from . import diagnosis as diagnosis_fsm
 from . import embeddings as embed_client
 from . import llm as llm_client
+from . import machines
 from . import safety as safety_gate
 from . import tagging as tagger
 
 ANSWER_MODEL = os.environ.get("TECHNICIAN_AI_MODEL", "claude-opus-4-7")
 TOP_K = 6
+MAX_FAULT_RECORDS = 2  # of TOP_K, so fault records can't crowd out the manuals
+EXACT_CODE_HITS = 3  # of TOP_K, kept for documents that name the exact code
 CHUNK_CHARS = 1800
 CHUNK_OVERLAP = 200
 NO_EMBED_MAX_DOCS = 20
@@ -99,6 +102,20 @@ Rules:
 4. Lead with the answer. Keep it short. Skip the preamble. Never use formal phrases like "根据手册", "建议您", "请注意" — just say it plainly.
 5. Never invent part numbers, torque specs, or measurements. If a precise value isn't in the sources, say so."""
 
+MACHINE_FIRST_RULE = (
+    'MACHINE FIRST: You are given the list of known machines. If the conversation does not '
+    'clearly indicate which one the technician is on, your first action is "ask": ask once, '
+    'in plain words, which machine it is. Name the two or three most likely machines from '
+    'the list; never paste the whole list. Keep "identified_machine" null until it is clear; '
+    'then set it to the EXACT name from the list and proceed. Never ask for a model number, '
+    'equipment ID, or line number.'
+)
+MACHINE_ALREADY_ASKED_RULE = (
+    'MACHINE: The technician has already been asked which machine this is. Do not ask again, '
+    'in any form, and do not ask them to read a label. Keep "identified_machine" null and '
+    'troubleshoot from what they described.'
+)
+
 DIAGNOSE_SYSTEM_PROMPT = """You are Technician AI, a friendly and experienced colleague helping a factory technician figure out what's wrong with their equipment, one step at a time.
 
 Sound like a real person on the shop floor — someone who's seen these problems before. Use plain everyday words, not textbook language. Short sentences. Ask one simple question at a time — don't pile on multiple questions at once. When you find the root cause, explain it the way you'd explain it to a coworker standing next to you, not like you're writing a report. Never mention the manual, documentation, or any source by name in your response text — use what you know from the sources, but don't say "according to the manual" or "consistent with the manual".
@@ -149,7 +166,9 @@ For pneumatic movement incidents (and ONLY for pneumatic incidents): do NOT incl
 
 OUTPUT: Reply with a single JSON object matching the provided schema and nothing else. If you must issue the SAFETY ALERT described above, do it inside the JSON: set "action" to "ask" and put the alert text (hazard line + required immediate actions + the safety-verification question) in "message".
 
-MACHINE FIRST: You are given the list of known machines. If the conversation does not clearly indicate which one the technician is on, your first action is "ask": briefly ask them to confirm which machine and list the known options. Keep "identified_machine" null until it is clear; then set it to the EXACT name from the list and proceed. Do not ask about the machine again once it is known.
+<<MACHINE_RULE>>
+
+EQUIPMENT CODES: Codes look like W2-703-B: workshop 2, line 7, machine 03, side B. Each line has 6 machines. When a number comes with a machine name, as in "401 framing machine", the machine is that name; ignore the number. Only the All-in-One Soldering Machine has sides A and B, so a code with A or B, such as 703b, is the All-in-One Soldering Machine. A number with no name and no side, such as 703, does not identify the machine.
 
 MACHINE ALIASES (treat these as exact matches — do not ask for confirmation):
 - "串焊机" → "All-in-One Soldering Machine"
@@ -166,6 +185,8 @@ Turn rules:
 3. KEEP ASKING until you have at least one CONFIRMED observation that directly explains the symptom. If all evidence is approximate, suspected, or hearsay, ask one more targeted question instead of resolving.
 4. Cite the source supporting your hypothesis inline as [#N] in your questions.
 5. One question per turn. Be concise. No preamble or filler.
+6. Before each question, reread the problem report and every technician reply. Never ask about anything already stated, ruled out, or already asked. If the technician corrects how a part works, drop the old assumption.
+7. Word each question so a one-word reply is clear. If you offer options ("A or B"), ask the technician to name which one.
 
 Evidence rules (apply at every turn):
 8. A measured or observed condition that falls outside the source-defined operating standard may be stated as the blocking condition with high confidence. Do NOT elevate this to a specific component failure without direct evidence.
@@ -198,7 +219,9 @@ RESOLVING (action = "resolve"): resolve only when at least one CONFIRMED observa
 
 For intermittent or multi-symptom problems, do not force a single root cause prematurely — keep alternatives open and recommend targeted verification rather than immediate replacement.
 
-ESCALATION: when you cannot reach a confirmed root cause, or you are told the session has run long, resolve with an escalation recommendation — confidence_level "low" or "medium", confirmed_condition stating what is and isn't established, and next_steps directing the technician to escalate to qualified maintenance or a supervisor with the evidence gathered so far.
+PROGRESS: Set "made_progress" to true when the technician's latest reply added a new fact or ruled out a possible cause, even if the answer was just "no". Set it to false when the reply added nothing you can use, such as "I don't know", or when you have no untested cause left to check.
+
+ESCALATION: There is no limit on questions while the investigation is moving forward. Keep going as long as it is. When you cannot reach a confirmed root cause and have nothing left to test, resolve with an escalation recommendation — confidence_level "low" or "medium", confirmed_condition stating what is and isn't established, and next_steps directing the technician to escalate to qualified maintenance or a supervisor with the evidence gathered so far.
 
 OFF-TOPIC MESSAGES: If the user's message is clearly NOT a factory equipment or machinery problem — this includes HR/policy questions, personal feelings, tiredness, stress, emotional venting, general complaints, or anything not about a specific machine fault — respond ONLY with a warm, brief `message` in the user's language. Do NOT ask which machine they are on. Do NOT add any phrase like "if you have equipment questions, I'm here" or any reference to equipment at all. Do NOT ask any follow-up questions of any kind. Set action to "ask", identified_machine to null, resolution to null. If the conversation has been personal/emotional for multiple turns, continue responding purely as a supportive presence — no equipment mentions ever."""
 
@@ -209,6 +232,7 @@ DIAGNOSE_DECISION_SCHEMA = {
     "properties": {
         "identified_machine": {"type": ["string", "null"]},
         "reasoning": {"type": "string"},
+        "made_progress": {"type": "boolean"},
         "action": {"type": "string", "enum": ["ask", "resolve"]},
         "message": {"type": "string"},
         "resolution": {
@@ -227,7 +251,7 @@ DIAGNOSE_DECISION_SCHEMA = {
             ],
         },
     },
-    "required": ["identified_machine", "reasoning", "action", "message", "resolution"],
+    "required": ["identified_machine", "reasoning", "made_progress", "action", "message", "resolution"],
 }
 
 # Append the reply-language directive so every answer/diagnosis turn honors it.
@@ -357,12 +381,39 @@ def grounding_guard(response: str) -> str:
     return response
 
 
+# A710, A.710, AE50, A.b33, E120 ...
+_LETTER_CODE = re.compile(
+    r"(?<![0-9a-z])(?:([a-z])\.?([0-9a-f]{3})|([a-z]{2})\.?(\d{2}))(?![0-9a-z])", re.IGNORECASE
+)
+# A bare number only counts next to a word that makes it a code: "fault code 9025".
+_NUMBER_CODE = re.compile(r"(?:alarm|fault|error|code|报警|故障|错误|代码)\D{0,8}?(\d{3,4})(?!\d)", re.IGNORECASE)
+
+
+def code_patterns(text: str) -> list[str]:
+    """Regex patterns for the codes in text, matching with or without the dot."""
+    patterns = []
+    for one, three, two, digits in _LETTER_CODE.findall(text):
+        letters, rest = (one, three) if one else (two, digits)
+        if any(c.isdigit() for c in rest):
+            patterns.append(r"\.?".join(letters) + r"\.?" + rest)
+    patterns.extend(_NUMBER_CODE.findall(text))
+    return list(dict.fromkeys(patterns))
+
+
+def _add_exact_matches(query: str, snippets: list[dict]) -> list[dict]:
+    """Put documents naming the query's exact codes ahead of the similar ones."""
+    hits = db.search_exact_codes(code_patterns(query), k=EXACT_CODE_HITS)
+    hit_ids = {h["id"] for h in hits}
+    return (hits + [s for s in snippets if s["id"] not in hit_ids])[:TOP_K]
+
+
 def answer_question(question: str) -> dict:
     if EMBEDDINGS_ENABLED:
         query_vec = embed_query(question)
         snippets = db.search_similar(query_vec, k=TOP_K)
     else:
         snippets = db.search_by_keywords(question, k=TOP_K)
+    snippets = _add_exact_matches(question, snippets)
 
     if not snippets:
         answer = "I don't have any manuals or field notes ingested yet. Run `python ingest.py <pdf>` to load a manual."
@@ -548,7 +599,8 @@ def diagnose_step(
     session:         FSM session dict (safety state + evidence-quality memory).
     machine:         machine confirmed so far, or None.
     machine_options: known machine names offered when the machine is unclear.
-    escalate:        when True, nudge the agent to conclude with an escalation.
+    escalate:        when True, the session has stalled: the agent sums up and
+                     suggests escalating, and the technician can keep going.
 
     Returns a dict with: message, is_resolved, resolution, phase, machine,
     identified_machine, is_safety_critical, hazard_type, sources, conversation_id.
@@ -614,7 +666,10 @@ def diagnose_step(
                 "",
             )
             if latest_user:
-                safety_gate.update_prerequisites(hazard, prerequisites, latest_user)
+                safety_gate.update_prerequisites(
+                    hazard, prerequisites, latest_user,
+                    items_were_listed=session.get("safety_items_listed", False),
+                )
                 session["prerequisites"] = prerequisites
 
             if safety_gate.all_prerequisites_met(hazard, prerequisites):
@@ -625,6 +680,7 @@ def diagnose_step(
             else:
                 # Still in SAFETY_HOLD — return code-generated response only.
                 unmet = safety_gate.get_unmet_prerequisites(hazard, prerequisites)
+                session["safety_items_listed"] = True
                 return {
                     "message": safety_gate.build_safety_hold_response(hazard, unmet),
                     "is_resolved": False,
@@ -641,11 +697,18 @@ def diagnose_step(
     # ------------------------------------------------------------------
     # 2. Retrieval — scope to the confirmed machine's manual when known.
     # ------------------------------------------------------------------
-    retrieval_query = f"{machine} {question}" if machine else question
+    # Each reply narrows the problem, so it joins the search.
+    replies = [m["content"] for m in history if m["role"] == "user"]
+    retrieval_query = " ".join([machine or "", question, *replies]).strip()
+    title_terms = machines.manual_terms(machine)
     if EMBEDDINGS_ENABLED:
-        snippets = db.search_similar(embed_query(retrieval_query), k=TOP_K)
+        snippets = db.search_similar(
+            embed_query(retrieval_query), k=TOP_K, title_terms=title_terms,
+            max_fault_records=MAX_FAULT_RECORDS,
+        )
     else:
-        snippets = db.search_by_keywords(retrieval_query, k=TOP_K, machine=machine)
+        snippets = db.search_by_keywords(retrieval_query, k=TOP_K, title_terms=title_terms)
+    snippets = _add_exact_matches(retrieval_query, snippets)
 
     if not snippets:
         return {
@@ -669,25 +732,40 @@ def diagnose_step(
         fsm_addition = diagnosis_fsm.get_state_prompt_addition(session)
         if fsm_addition:
             system_prompt += "\n\n" + fsm_addition
+    latest_reply = history[-1]["content"] if history else ""
+    answered_question = history[-2]["content"] if len(history) > 1 else ""
+    unclear_reply = diagnosis_fsm.is_unclear_reply(latest_reply, answered_question)
+    if unclear_reply:
+        system_prompt += (
+            "\n\n[UNCLEAR REPLY] The latest reply does not say which option applies, "
+            "or just repeats your question. It confirms nothing. Do not build on it. "
+            "Ask again in plain words so the technician has to describe what they see."
+        )
+    machine_question_used = bool(session and session.get("machine_asked") and not machine)
+    system_prompt = system_prompt.replace(
+        "<<MACHINE_RULE>>", MACHINE_ALREADY_ASKED_RULE if machine_question_used else MACHINE_FIRST_RULE
+    )
     if escalate:
         system_prompt += (
-            "\n\n[ESCALATION] This session has run long without a confirmed root "
-            "cause. Prefer to resolve now with an escalation recommendation rather "
-            "than asking further questions."
+            "\n\n[STALLED] The last few turns made no progress. Set action to "
+            "\"ask\". In message, sum up what is confirmed and what is ruled out, "
+            "suggest escalating to qualified maintenance or a supervisor, and say "
+            "the technician can keep going if they have anything new."
         )
 
     # ------------------------------------------------------------------
     # 4. Assemble the conversation and request a structured decision.
     # ------------------------------------------------------------------
     sources_block = _format_sources(snippets)
-    known = ", ".join(machine_options) if machine_options else "(none configured)"
+    known = "(not needed)" if machine_question_used else ", ".join(machine_options or [])
     convo = "\n".join(
         f"[{m['role'].upper()}]: {m['content']}" for m in history
     ) or "(no replies yet)"
     detected_lang = _detect_language(question)
+    machine_status = machine or ("unknown, do not ask" if machine_question_used else "unknown")
     user_message = (
         f"Known machines: {known}\n"
-        f"Machine identified so far: {machine or 'unknown'}\n\n"
+        f"Machine identified so far: {machine_status}\n\n"
         f"Sources:\n\n{sources_block}\n\n---\n\n"
         f"Problem reported: {question}\n\n"
         f"Conversation so far:\n{convo}"
@@ -750,12 +828,24 @@ def diagnose_step(
             session,
             llm_response=("RESOLVED:" if is_resolved else decision.get("message", "")),
             technician_answer=technician_answer,
+            answered_question=answered_question,
         )
         for k, v in updated.items():
             if k != "history":  # history is owned by the caller
                 session[k] = v
 
     confirmed_machine = machine or identified_machine
+
+    if session is not None:
+        if not confirmed_machine:
+            session["machine_asked"] = True
+        if escalate:
+            session["stalled_turns"] = 0
+        elif history:
+            diagnosis_fsm.record_progress(
+                session, decision.get("message", ""),
+                decision.get("made_progress", True), history,
+            )
 
     # ------------------------------------------------------------------
     # 7. Build the turn result.

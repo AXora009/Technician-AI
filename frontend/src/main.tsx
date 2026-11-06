@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@/context/theme-provider";
 import { LangProvider } from "@/i18n";
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { WorkspaceGate } from "@/components/workspace-gate";
 import App from "./App";
 import "./index.css";
 
@@ -12,11 +11,7 @@ function Root() {
   useEffect(() => {
     if (needRefresh) updateServiceWorker(true);
   }, [needRefresh, updateServiceWorker]);
-  return (
-    <WorkspaceGate>
-      <App />
-    </WorkspaceGate>
-  );
+  return <App />;
 }
 
 createRoot(document.getElementById("root")!).render(
