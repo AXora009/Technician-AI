@@ -121,6 +121,10 @@ _NO_INFORMATION_REPLY = re.compile(
     re.IGNORECASE,
 )
 
+# "No" is not here: it still rules out the options offered.
+_BARE_YES = re.compile(r"(yes|yeah|yep|yup|ok|okay|sure|对|是|是的|有)[.!。！]*", re.IGNORECASE)
+_CHOICE_QUESTION = re.compile(r"\bor\b|还是|或者|或是", re.IGNORECASE)
+
 # ---------------------------------------------------------------------------
 # Evidence quality classification
 # ---------------------------------------------------------------------------
@@ -329,7 +333,7 @@ def new_session(question, is_safety_critical=False, hazard_type=None):
 # Public: advance_state
 # ---------------------------------------------------------------------------
 
-def advance_state(session, llm_response, technician_answer):
+def advance_state(session, llm_response, technician_answer, answered_question=""):
     """
     Advance the session by one turn.
 
@@ -338,6 +342,7 @@ def advance_state(session, llm_response, technician_answer):
     session          : dict -- existing session (will NOT be mutated).
     llm_response     : str  -- latest assistant message.
     technician_answer: str  -- technician reply to that message.
+    answered_question: str  -- the question that reply was answering.
 
     Returns
     -------
@@ -382,7 +387,10 @@ def advance_state(session, llm_response, technician_answer):
 
     # 4a. Classify and log evidence quality for this technician turn.
     if not is_resolution and technician_answer.strip():
-        quality = _classify_evidence_quality(technician_answer)
+        if is_unclear_reply(technician_answer, answered_question):
+            quality = "UNCLEAR"
+        else:
+            quality = _classify_evidence_quality(technician_answer)
         s.setdefault("evidence_log", []).append(quality)
         if quality == "CONFIRMED":
             s["has_confirmed_evidence"] = True
@@ -415,6 +423,17 @@ def is_no_information(reply):
     return bool(_NO_INFORMATION_REPLY.fullmatch(reply.strip()))
 
 
+def is_unclear_reply(reply, question):
+    """True when a reply can't be read as evidence: a bare "yes" to an "A or B"
+    question, or the technician repeating the question back."""
+    reply = reply.strip()
+    if not reply or not question:
+        return False
+    if _BARE_YES.fullmatch(reply) and _CHOICE_QUESTION.search(question):
+        return True
+    return len(reply) >= 8 and reply.lower() in question.lower()
+
+
 def record_progress(session, next_question, made_progress, history):
     """Track turns in a row without progress.
 
@@ -422,9 +441,9 @@ def record_progress(session, next_question, made_progress, history):
     around: a question it already asked, and a reply that says nothing new.
     """
     reply = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-    if is_no_information(reply):
-        made_progress = False
     asked = [m["content"].lower() for m in history if m["role"] == "assistant"]
+    if is_no_information(reply) or (asked and is_unclear_reply(reply, asked[-1])):
+        made_progress = False
     repeated = any(
         SequenceMatcher(None, next_question.lower(), earlier).ratio() > 0.8
         for earlier in asked

@@ -15,6 +15,7 @@ from . import tagging as tagger
 ANSWER_MODEL = os.environ.get("TECHNICIAN_AI_MODEL", "claude-opus-4-7")
 TOP_K = 6
 MAX_FAULT_RECORDS = 2  # of TOP_K, so fault records can't crowd out the manuals
+EXACT_CODE_HITS = 3  # of TOP_K, kept for documents that name the exact code
 CHUNK_CHARS = 1800
 CHUNK_OVERLAP = 200
 NO_EMBED_MAX_DOCS = 20
@@ -185,6 +186,7 @@ Turn rules:
 4. Cite the source supporting your hypothesis inline as [#N] in your questions.
 5. One question per turn. Be concise. No preamble or filler.
 6. Before each question, reread the problem report and every technician reply. Never ask about anything already stated, ruled out, or already asked. If the technician corrects how a part works, drop the old assumption.
+7. Word each question so a one-word reply is clear. If you offer options ("A or B"), ask the technician to name which one.
 
 Evidence rules (apply at every turn):
 8. A measured or observed condition that falls outside the source-defined operating standard may be stated as the blocking condition with high confidence. Do NOT elevate this to a specific component failure without direct evidence.
@@ -379,12 +381,39 @@ def grounding_guard(response: str) -> str:
     return response
 
 
+# A710, A.710, AE50, A.b33, E120 ...
+_LETTER_CODE = re.compile(
+    r"(?<![0-9a-z])(?:([a-z])\.?([0-9a-f]{3})|([a-z]{2})\.?(\d{2}))(?![0-9a-z])", re.IGNORECASE
+)
+# A bare number only counts next to a word that makes it a code: "fault code 9025".
+_NUMBER_CODE = re.compile(r"(?:alarm|fault|error|code|报警|故障|错误|代码)\D{0,8}?(\d{3,4})(?!\d)", re.IGNORECASE)
+
+
+def code_patterns(text: str) -> list[str]:
+    """Regex patterns for the codes in text, matching with or without the dot."""
+    patterns = []
+    for one, three, two, digits in _LETTER_CODE.findall(text):
+        letters, rest = (one, three) if one else (two, digits)
+        if any(c.isdigit() for c in rest):
+            patterns.append(r"\.?".join(letters) + r"\.?" + rest)
+    patterns.extend(_NUMBER_CODE.findall(text))
+    return list(dict.fromkeys(patterns))
+
+
+def _add_exact_matches(query: str, snippets: list[dict]) -> list[dict]:
+    """Put documents naming the query's exact codes ahead of the similar ones."""
+    hits = db.search_exact_codes(code_patterns(query), k=EXACT_CODE_HITS)
+    hit_ids = {h["id"] for h in hits}
+    return (hits + [s for s in snippets if s["id"] not in hit_ids])[:TOP_K]
+
+
 def answer_question(question: str) -> dict:
     if EMBEDDINGS_ENABLED:
         query_vec = embed_query(question)
         snippets = db.search_similar(query_vec, k=TOP_K)
     else:
         snippets = db.search_by_keywords(question, k=TOP_K)
+    snippets = _add_exact_matches(question, snippets)
 
     if not snippets:
         answer = "I don't have any manuals or field notes ingested yet. Run `python ingest.py <pdf>` to load a manual."
@@ -679,6 +708,7 @@ def diagnose_step(
         )
     else:
         snippets = db.search_by_keywords(retrieval_query, k=TOP_K, title_terms=title_terms)
+    snippets = _add_exact_matches(retrieval_query, snippets)
 
     if not snippets:
         return {
@@ -702,6 +732,15 @@ def diagnose_step(
         fsm_addition = diagnosis_fsm.get_state_prompt_addition(session)
         if fsm_addition:
             system_prompt += "\n\n" + fsm_addition
+    latest_reply = history[-1]["content"] if history else ""
+    answered_question = history[-2]["content"] if len(history) > 1 else ""
+    unclear_reply = diagnosis_fsm.is_unclear_reply(latest_reply, answered_question)
+    if unclear_reply:
+        system_prompt += (
+            "\n\n[UNCLEAR REPLY] The latest reply does not say which option applies, "
+            "or just repeats your question. It confirms nothing. Do not build on it. "
+            "Ask again in plain words so the technician has to describe what they see."
+        )
     machine_question_used = bool(session and session.get("machine_asked") and not machine)
     system_prompt = system_prompt.replace(
         "<<MACHINE_RULE>>", MACHINE_ALREADY_ASKED_RULE if machine_question_used else MACHINE_FIRST_RULE
@@ -789,6 +828,7 @@ def diagnose_step(
             session,
             llm_response=("RESOLVED:" if is_resolved else decision.get("message", "")),
             technician_answer=technician_answer,
+            answered_question=answered_question,
         )
         for k, v in updated.items():
             if k != "history":  # history is owned by the caller

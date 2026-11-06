@@ -14,6 +14,84 @@ from technician_ai import api, database as db
 from technician_ai import diagnosis, machines, retrieval, safety
 
 
+class CodeSearchTests(unittest.TestCase):
+    def setUp(self):
+        self.path = Path(_tmp.name) / "codes.db"
+        self.path.unlink(missing_ok=True)
+        patcher = mock.patch.object(db, "DB_PATH", str(self.path))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        db.init_db()
+        db.insert_document("manual_chunk", "A.710 Instantaneous Overload", None, {"manual_title": "Yaskawa"})
+        db.insert_document("manual_chunk", "A.7100 is a part number", None, {"manual_title": "Other"})
+        db.insert_document("manual_chunk", "alarm A710 cleared", None, {"manual_title": "eam_fault_worder (2)"})
+
+    def found(self, text):
+        return [d["text"] for d in db.search_exact_codes(retrieval.code_patterns(text))]
+
+    def test_code_matches_with_or_without_the_dot(self):
+        for text in ("A.710", "a710", "Servo code a710", "安川故障 710 怎么解决"):
+            self.assertEqual(self.found(text)[0], "A.710 Instantaneous Overload", text)
+
+    def test_manuals_rank_before_fault_records(self):
+        self.assertEqual(self.found("A710"), ["A.710 Instantaneous Overload", "alarm A710 cleared"])
+
+    def test_alarm_text_ranks_before_a_circuit_label(self):
+        for _ in range(3):
+            db.insert_document("manual_chunk", "A710 A710 A710 terminal block", None, {"manual_title": "Circuit Diagram"})
+        self.assertEqual(self.found("A710")[0], "A.710 Instantaneous Overload")
+
+    def test_longer_code_does_not_match(self):
+        self.assertNotIn("A.7100 is a part number", self.found("A710"))
+
+    def test_finds_all_real_code_shapes(self):
+        for text in ("AE50", "A.b33", "E120", "AC90", "Fault code 9025"):
+            self.assertTrue(retrieval.code_patterns(text), text)
+
+    def test_ordinary_words_and_equipment_codes_are_not_codes(self):
+        for text in ("W2-703", "703b", "Line 7A", "the bead face", "M96 tester", "L4 401", "0.5 MPa"):
+            self.assertEqual(retrieval.code_patterns(text), [], text)
+
+    def test_exact_hits_lead_the_results(self):
+        similar = [{"id": 99, "kind": "manual_chunk", "text": "x", "metadata": {}, "score": 1}]
+        merged = retrieval._add_exact_matches("A710", similar)
+        self.assertEqual(merged[0]["text"], "A.710 Instantaneous Overload")
+        self.assertEqual(merged[-1]["id"], 99)
+
+
+class UnclearReplyTests(unittest.TestCase):
+    choice = "Are the cuts off-center, or are they ragged?"
+
+    def test_bare_yes_to_a_choice_is_unclear(self):
+        for reply in ("Yes", "yes.", "有", "是的"):
+            self.assertTrue(diagnosis.is_unclear_reply(reply, self.choice), reply)
+
+    def test_no_to_a_choice_still_rules_it_out(self):
+        self.assertFalse(diagnosis.is_unclear_reply("No", self.choice))
+
+    def test_yes_to_a_plain_question_is_clear(self):
+        self.assertFalse(diagnosis.is_unclear_reply("Yes", "Is the belt moving?"))
+
+    def test_naming_the_option_is_clear(self):
+        self.assertFalse(diagnosis.is_unclear_reply("Ragged", self.choice))
+
+    def test_repeating_the_question_is_unclear(self):
+        self.assertTrue(diagnosis.is_unclear_reply("焊点位置是否表现出明显的偏移", "请问焊点位置是否表现出明显的偏移？"))
+
+    def test_only_unclear_yes_replies_cannot_earn_high_confidence(self):
+        session = diagnosis.new_session("Cutting strings wrong")
+        for _ in range(4):
+            session = diagnosis.advance_state(session, "Next?", "Yes", self.choice)
+        self.assertFalse(session["has_confirmed_evidence"])
+        self.assertFalse(diagnosis.high_confidence_warranted(session))
+
+    def test_unclear_reply_counts_as_stalled(self):
+        session = {"stalled_turns": 0}
+        history = [{"role": "assistant", "content": self.choice}, {"role": "user", "content": "Yes"}]
+        diagnosis.record_progress(session, "Is the blade bent?", True, history)
+        self.assertEqual(session["stalled_turns"], 1)
+
+
 class SafetyHoldTests(unittest.TestCase):
     hazard = "pneumatic_hazard"
 

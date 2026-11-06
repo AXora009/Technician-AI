@@ -15,6 +15,7 @@ EMBED_DIM = int(os.environ.get("EMBED_DIM", "512"))
 DB_PATH = os.environ.get("TECHNICIAN_AI_DB", "./data/tech.db")
 MACHINE_TITLE_BOOST = 0.1  # added to the similarity of the known machine's manuals
 _FAULT_RECORD_TITLE = re.compile(r"fault|eam_", re.IGNORECASE)
+_ALARM_WORD = re.compile(r"alarm|fault|warning|overload|报警|故障|警告", re.IGNORECASE)
 
 
 def _pack(vec: list[float] | None) -> bytes | None:
@@ -202,6 +203,44 @@ def search_similar(
         if len(results) == k:
             break
     return results
+
+
+def search_exact_codes(patterns: list[str], k: int = 3) -> list[dict]:
+    """Return documents containing a code exactly, for what similarity misses.
+
+    Text about alarms ranks first, so a circuit-diagram label like A710 doesn't
+    beat the alarm table. Then manuals before fault records, then the documents
+    naming a code most.
+    """
+    if not patterns:
+        return []
+    code = re.compile(
+        "|".join(f"(?<![0-9a-z])(?:{p})(?![0-9a-z])" for p in patterns), re.IGNORECASE
+    )
+    conn = connect()
+    try:
+        rows = conn.execute("SELECT id, kind, text, metadata_json FROM documents").fetchall()
+    finally:
+        conn.close()
+
+    found = []
+    for r in rows:
+        count = len(code.findall(r["text"]))
+        if count:
+            is_fault_record = bool(_FAULT_RECORD_TITLE.search(_manual_title(r)))
+            not_about_alarms = not _ALARM_WORD.search(r["text"])
+            found.append((not_about_alarms, is_fault_record, -count, r["id"], r))
+    found.sort(key=lambda x: x[:4])
+    return [
+        {
+            "id": r["id"],
+            "kind": r["kind"],
+            "text": r["text"],
+            "metadata": json.loads(r["metadata_json"]),
+            "score": None,
+        }
+        for *_, r in found[:k]
+    ]
 
 
 def list_all_documents(limit: int = 20) -> list[dict]:
