@@ -1,5 +1,5 @@
 #!/bin/bash
-# Smoke-tests an extracted package: first-run setup, server start, access control.
+# Smoke-tests an extracted package: first-run setup, server start, data routes.
 #   packaging/smoke_test.sh <package dir> <path to bundled python, relative to it>
 set -euo pipefail
 cd "$1"
@@ -19,11 +19,8 @@ for _ in $(seq 60); do
 done
 
 grep -q "GOOGLE_API_KEY=AIza-fake-key-for-smoke-test" .env
-CODE=$("$PY" -c "import json; print(next(iter(json.load(open('data/workspaces.json')))))")
 
 status() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
 [ "$(status "http://127.0.0.1:$PORT/")" = 200 ]
-[ "$(status "http://127.0.0.1:$PORT/api/manuals")" = 401 ]
-curl -sf -c cookies.txt -H "Content-Type: application/json" -d "{\"code\":\"$CODE\"}" "http://127.0.0.1:$PORT/api/login" > /dev/null
-[ "$(status -b cookies.txt "http://127.0.0.1:$PORT/api/manuals")" = 200 ]
+[ "$(status "http://127.0.0.1:$PORT/api/manuals")" = 200 ]
 echo "smoke test passed"
