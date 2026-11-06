@@ -3,10 +3,10 @@
 Names and Chinese terms come from the plant's fault repair records.
 
 Equipment codes look like W2-703-All-in-One Soldering Machine-B: workshop W2,
-line 7, unit 03, side B. Most machine types share unit numbers, so "703" alone
-does not identify a machine. A side letter does: on units 02-06 only the
-All-in-One Soldering Machine has sides. Unit 01 also has glass loaders with
-sides, so "501B" stays unknown and the agent asks.
+line 7, machine 03, side B. Each line has 6 machines. The number never names a
+machine type: "401 framing machine" is simply the framing machine, and "703"
+alone is unknown. A side letter does name it: only the All-in-One Soldering
+Machine has sides A and B, so "703b" is that machine.
 """
 from __future__ import annotations
 
@@ -80,7 +80,9 @@ _ALIASES = sorted(
     key=lambda item: len(item[0]),
     reverse=True,
 )
-_SIDED_CODE = re.compile(r"(?<![a-z0-9])(?:w[12]-?)?[1-8]0[2-6]-?[ab](?![a-z0-9])", re.IGNORECASE)
+_SIDED_CODE = re.compile(
+    r"(?<![a-z0-9])(?:(?:w[12]-?)?[1-8]0[1-6]-?|(?:line\s*|l)[1-8])[ab](?![a-z0-9])", re.IGNORECASE
+)
 
 
 def _normalize(text: str) -> str:
@@ -95,10 +97,11 @@ def detect(text: str) -> str | None:
     """Return the machine named in the text, or None when it isn't clear.
 
     Longest term wins, so "busbar soldering" is not read as "soldering machine".
+    A number in front of a name is ignored, as in "401Hi-pot" or "401装框机".
     """
     normalized = _normalize(text)
     for alias, name in _ALIASES:
-        if re.search(rf"(?<![a-z0-9]){re.escape(alias)}", normalized):
+        if re.search(rf"(?<![a-z]){re.escape(alias)}", normalized):
             return name
     return SOLDERING if _SIDED_CODE.search(text) else None
 

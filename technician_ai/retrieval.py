@@ -168,7 +168,7 @@ OUTPUT: Reply with a single JSON object matching the provided schema and nothing
 
 <<MACHINE_RULE>>
 
-EQUIPMENT CODES: Codes look like W2-703-B: workshop 2, line 7, unit 03, side B. Most machine types share unit numbers, so a code without a machine name does not identify the machine.
+EQUIPMENT CODES: Codes look like W2-703-B: workshop 2, line 7, machine 03, side B. Each line has 6 machines. When a number comes with a machine name, as in "401 framing machine", the machine is that name; ignore the number. Only the All-in-One Soldering Machine has sides A and B, so a code with A or B, such as 703b, is the All-in-One Soldering Machine. A number with no name and no side, such as 703, does not identify the machine.
 
 MACHINE ALIASES (treat these as exact matches — do not ask for confirmation):
 - "串焊机" → "All-in-One Soldering Machine"

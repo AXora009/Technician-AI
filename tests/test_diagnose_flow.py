@@ -219,13 +219,25 @@ class MachineDetectionTests(unittest.TestCase):
             self.assertEqual(machines.detect(text), expected, text)
 
     def test_side_letter_identifies_soldering_on_units_02_to_06(self):
-        for code in ("703b", "503B", "W2-703-B", "W1-205-A"):
+        for code in ("703b", "503B", "W2-703-B", "W1-205-A", "501B", "Line 7A", "L7a"):
             self.assertEqual(machines.detect(code), machines.SOLDERING, code)
 
     def test_ambiguous_codes_stay_unknown(self):
         # Unit 703 is also a laminator and a layup machine; 501B may be a glass loader.
-        for code in ("703", "W2-703", "401", "501B", "Workshop 2 and line 6", "Yes"):
+        for code in ("703", "W2-703", "401", "L4", "703c", "707b", "Workshop 2 and line 6", "Yes"):
             self.assertIsNone(machines.detect(code), code)
+
+    def test_number_in_front_of_a_name_is_ignored(self):
+        cases = {
+            "401 framing machine": "Framing Machine",
+            "401Hi-pot 测试不扫码": "HiPot Tester",
+            "401装框机玻璃溢胶": "Framing Machine",
+            "W1-401-Labeling Machine": "Labeling Machine",
+            "703 laminator": "Laminator",
+            "101焊机串焊机": machines.SOLDERING,
+        }
+        for text, expected in cases.items():
+            self.assertEqual(machines.detect(text), expected, text)
 
     def test_word_inside_another_word_does_not_match(self):
         self.assertIsNone(machines.detect("keeps repeating the fault"))
