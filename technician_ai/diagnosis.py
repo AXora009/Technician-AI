@@ -4,6 +4,7 @@ diagnosis_fsm.py -- Finite-state machine for the technician diagnostic session.
 
 import re
 from copy import deepcopy
+from difflib import SequenceMatcher
 
 from . import safety as _sg
 
@@ -113,6 +114,12 @@ _SHARED_SUPPLY_PATTERNS = [
         r"\bupstream\b",
     ]
 ]
+
+# A whole reply that adds nothing. "No" is not here: it rules something out.
+_NO_INFORMATION_REPLY = re.compile(
+    r"((i\s+)?(do\s*n[o']?t|dont)\s+know|idk|not\s+sure|no\s+idea|unsure|不知道|不清楚|不确定)[.!。！]*",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Evidence quality classification
@@ -294,6 +301,8 @@ def new_session(question, is_safety_critical=False, hazard_type=None):
         "state": STATE_SAFETY_CHECK if is_safety_critical else STATE_SYMPTOM_GATHERING,
         "question": question,
         "machine": None,             # confirmed machine name once identified
+        "machine_asked": False,      # the one question about the machine has been used
+        "stalled_turns": 0,          # turns in a row without progress
         "is_safety_critical": is_safety_critical,
         "hazard_type": hazard_type,
         "prerequisites": prerequisites,
@@ -395,6 +404,34 @@ def advance_state(session, llm_response, technician_answer):
         s["state"] = _next_state(s)
 
     return s
+
+
+# ---------------------------------------------------------------------------
+# Public: record_progress
+# ---------------------------------------------------------------------------
+
+def is_no_information(reply):
+    return bool(_NO_INFORMATION_REPLY.fullmatch(reply.strip()))
+
+
+def record_progress(session, next_question, made_progress, history):
+    """Track turns in a row without progress.
+
+    Progress is the agent's own call, with two exceptions it can't talk its way
+    around: a question it already asked, and a reply that says nothing new.
+    """
+    reply = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+    if is_no_information(reply):
+        made_progress = False
+    asked = [m["content"].lower() for m in history if m["role"] == "assistant"]
+    repeated = any(
+        SequenceMatcher(None, next_question.lower(), earlier).ratio() > 0.8
+        for earlier in asked
+    )
+    if made_progress and not repeated:
+        session["stalled_turns"] = 0
+    else:
+        session["stalled_turns"] = session.get("stalled_turns", 0) + 1
 
 
 # ---------------------------------------------------------------------------
