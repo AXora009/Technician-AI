@@ -8,6 +8,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -122,7 +123,8 @@ async def ingest_endpoint(file: UploadFile = File(...)):
     dest = MANUALS_DIR / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
-    chunks = ingest.ingest_file(dest)
+    # Ingestion takes minutes; on the event loop it would freeze the whole site.
+    chunks = await run_in_threadpool(ingest.ingest_file, dest)
     return JSONResponse({"filename": filename, "chunks": chunks})
 
 
@@ -215,7 +217,8 @@ async def api_ingest(file: UploadFile = File(...)):
     dest = MANUALS_DIR / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(await file.read())
-    chunks = ingest.ingest_file(dest)
+    # Ingestion takes minutes; on the event loop it would freeze the whole site.
+    chunks = await run_in_threadpool(ingest.ingest_file, dest)
     return {"filename": filename, "chunks": chunks}
 
 

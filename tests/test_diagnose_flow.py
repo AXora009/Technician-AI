@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -12,6 +14,28 @@ from fastapi.testclient import TestClient
 
 from technician_ai import api, database as db
 from technician_ai import diagnosis, machines, retrieval, safety
+
+
+class UploadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_upload_does_not_block_other_requests(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_ingest(_):
+            started.set()
+            release.wait(5)
+            return 1
+
+        upload = mock.Mock(filename="manual.pdf")
+        upload.read = mock.AsyncMock(return_value=b"%PDF")
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(api, "MANUALS_DIR", Path(folder)), \
+                mock.patch.object(api.ingest, "ingest_file", slow_ingest):
+            task = asyncio.create_task(api.api_ingest(upload))
+            await asyncio.to_thread(started.wait, 5)
+            self.assertFalse(task.done())  # this line runs only if the loop is free
+            release.set()
+            await task
 
 
 class CodeSearchTests(unittest.TestCase):
