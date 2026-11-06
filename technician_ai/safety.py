@@ -12,6 +12,8 @@ Public API (consumed by rag.py and app.py):
 
 from __future__ import annotations
 
+import re
+
 # ---------------------------------------------------------------------------
 # Hazard trigger phrases
 # ---------------------------------------------------------------------------
@@ -101,7 +103,6 @@ SAFETY_TRIGGERS: dict[str, list[str]] = {
         "cylinder fired",
         "cylinder extended",
         "pneumatic actuator",
-        "air on",
         "almost caught",
         "almost got caught",
         "almost pinched",
@@ -342,20 +343,50 @@ def init_prerequisites(hazard_type: str) -> dict[str, bool]:
     return {p["id"]: False for p in get_prerequisites_for_hazard(hazard_type)}
 
 
+_INJURY_PREREQUISITES = {"no_injury", "injury_checked"}
+_BLANKET_CONFIRMATION = re.compile(
+    r"(yes|yep|yeah|done|all done|all confirmed|confirm(ed)?\b.*"
+    r"|已确认|确认|确认了|确认完毕|都确认了|好了|是的)[.!。！]*",
+    re.IGNORECASE,
+)
+_NEGATION = re.compile(r"\bnot\b|n't\b|\bno\b|没|未|还")
+_NO_INJURY_REPLY = re.compile(r"(no|nope|none|no one|nobody|没有|没|没人|没有人)[.!。！]*", re.IGNORECASE)
+
+
 def update_prerequisites(
-    hazard_type: str, prerequisites: dict[str, bool], user_text: str
+    hazard_type: str,
+    prerequisites: dict[str, bool],
+    user_text: str,
+    items_were_listed: bool = False,
 ) -> None:
     """Update prerequisites in-place from user_text (case-insensitive).
 
     Only marks a prerequisite True — never reverts a confirmed prerequisite.
+
+    items_were_listed: the technician has seen the checklist, so one "confirmed"
+    covers it. Injury is never covered this way: "yes" to "is anyone injured?"
+    must not clear it, so it needs its own answer, and a bare "no" counts only
+    when injury is the one question left.
     """
     lower = user_text.lower()
+    reply = lower.strip()
+    blanket = (
+        items_were_listed
+        and _BLANKET_CONFIRMATION.fullmatch(reply) is not None
+        and _NEGATION.search(reply) is None
+    )
     for p in get_prerequisites_for_hazard(hazard_type):
         pid = p["id"]
         if prerequisites.get(pid):
             continue  # already confirmed
         if any(phrase in lower for phrase in p["confirmation_patterns"]):
             prerequisites[pid] = True
+        elif blanket and pid not in _INJURY_PREREQUISITES:
+            prerequisites[pid] = True
+
+    unmet = [pid for pid, done in prerequisites.items() if not done]
+    if len(unmet) == 1 and unmet[0] in _INJURY_PREREQUISITES and _NO_INJURY_REPLY.fullmatch(reply):
+        prerequisites[unmet[0]] = True
 
 
 def all_prerequisites_met(hazard_type: str, prerequisites: dict[str, bool]) -> bool:

@@ -637,7 +637,10 @@ def diagnose_step(
                 "",
             )
             if latest_user:
-                safety_gate.update_prerequisites(hazard, prerequisites, latest_user)
+                safety_gate.update_prerequisites(
+                    hazard, prerequisites, latest_user,
+                    items_were_listed=session.get("safety_items_listed", False),
+                )
                 session["prerequisites"] = prerequisites
 
             if safety_gate.all_prerequisites_met(hazard, prerequisites):
@@ -648,6 +651,7 @@ def diagnose_step(
             else:
                 # Still in SAFETY_HOLD — return code-generated response only.
                 unmet = safety_gate.get_unmet_prerequisites(hazard, prerequisites)
+                session["safety_items_listed"] = True
                 return {
                     "message": safety_gate.build_safety_hold_response(hazard, unmet),
                     "is_resolved": False,

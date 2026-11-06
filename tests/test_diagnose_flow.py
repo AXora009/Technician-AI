@@ -11,7 +11,85 @@ os.environ["TECHNICIAN_AI_DB"] = str(Path(_tmp.name) / "tech.db")
 from fastapi.testclient import TestClient
 
 from technician_ai import api, database as db
-from technician_ai import diagnosis, machines, retrieval
+from technician_ai import diagnosis, machines, retrieval, safety
+
+
+class SafetyHoldTests(unittest.TestCase):
+    hazard = "pneumatic_hazard"
+
+    def setUp(self):
+        self.items = safety.init_prerequisites(self.hazard)
+
+    def reply(self, text, listed=True):
+        safety.update_prerequisites(self.hazard, self.items, text, items_were_listed=listed)
+
+    def met(self):
+        return safety.all_prerequisites_met(self.hazard, self.items)
+
+    def test_turning_the_air_on_is_not_a_hazard(self):
+        for text in ("Help me turn the air on for the edge trimmer", "Need a repair on the belt"):
+            self.assertIsNone(safety.classify_safety_critical(text), text)
+
+    def test_real_pneumatic_movement_still_triggers(self):
+        self.assertEqual(safety.classify_safety_critical("The cylinder fired and the arm moved suddenly"), self.hazard)
+
+    def test_confirmed_covers_the_list_but_not_injury(self):
+        self.reply("confirmed")
+        self.assertFalse(self.met())
+        self.assertEqual([p["id"] for p in safety.get_unmet_prerequisites(self.hazard, self.items)], ["no_injury"])
+
+    def test_no_clears_injury_once_it_is_the_last_question(self):
+        self.reply("confirmed")
+        self.reply("No")
+        self.assertTrue(self.met())
+
+    def test_yes_to_the_injury_question_stays_held(self):
+        self.reply("confirmed")
+        self.reply("yes")
+        self.assertFalse(self.met())
+
+    def test_no_does_not_clear_injury_while_other_items_are_open(self):
+        self.reply("no")
+        self.assertFalse(self.items["no_injury"])
+
+    def test_confirmed_before_the_list_was_shown_does_nothing(self):
+        self.reply("confirmed", listed=False)
+        self.assertFalse(any(self.items.values()))
+
+    def test_negated_confirmation_does_nothing(self):
+        for text in ("confirmed not stopped", "I can't confirm", "还没确认"):
+            self.reply(text)
+            self.assertFalse(any(self.items.values()), text)
+
+    def test_chinese_confirmation(self):
+        self.reply("已确认")
+        self.reply("没有")
+        self.assertTrue(self.met())
+
+    def test_spelled_out_reply_still_works_at_once(self):
+        self.reply("no one is hurt, e-stop pressed, air locked out, everyone clear", listed=False)
+        self.assertTrue(self.met())
+
+
+class SafetyHoldFlowTests(unittest.TestCase):
+    def step(self, session, replies):
+        history = [{"role": "assistant", "content": "Safety alert"}]
+        for text in replies:
+            history.append({"role": "user", "content": text})
+        with mock.patch.object(retrieval, "EMBEDDINGS_ENABLED", False):
+            return retrieval.diagnose_step("The arm moved suddenly", history, session=session)
+
+    def test_confirmation_only_counts_after_the_list_is_shown(self):
+        session = diagnosis.new_session("The arm moved suddenly", True, "pneumatic_hazard")
+        first = self.step(session, ["confirmed"])
+        self.assertEqual(first["phase"], "safety_hold")
+        self.assertFalse(session["prerequisites"]["estop_engaged"])
+        self.assertTrue(session["safety_items_listed"])
+        second = self.step(session, ["confirmed", "confirmed"])
+        self.assertEqual(second["phase"], "safety_hold")
+        self.assertTrue(session["prerequisites"]["air_isolated"])
+        self.assertIn("injured", second["message"])
+        self.assertNotIn("Emergency Stop", second["message"])
 
 
 class MachineDetectionTests(unittest.TestCase):

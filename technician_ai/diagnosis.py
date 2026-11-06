@@ -307,6 +307,7 @@ def new_session(question, is_safety_critical=False, hazard_type=None):
         "hazard_type": hazard_type,
         "prerequisites": prerequisites,
         "safety_confirmed": False,
+        "safety_items_listed": False,  # the technician has seen the checklist
         "has_safety_door": detect_safety_door(question),
         "obstruction_checked": False,
         "has_spec_comparison": False,
