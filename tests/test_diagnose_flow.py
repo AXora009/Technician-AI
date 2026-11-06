@@ -25,6 +25,15 @@ class MachineDetectionTests(unittest.TestCase):
             "Hipot machine keeps disconnecting": "HiPot Tester",
             "铭牌机不吸": "Labeling Machine",
             "叠焊机报警": "Busbar Soldering Machine",
+            "Labeling": "Labeling Machine",
+            "Line 1 framer": "Framing Machine",
+            "D step axis fault on the tape remover": "Tape Removal Machine",
+            "L5 jbox glue machine": "Junction Box Gluing Machine",
+            "Barcode not placed": "Labeling&EPE Placing Machine",
+            "封边胶带机": "Edge Taping Machine",
+            "On the vertical strapping machine": "Strapping Machine",
+            "Panel isn't being picked up on curing line loader": "Curing Line Loader Machine",
+            "一体化焊机": machines.SOLDERING,
         }
         for text, expected in cases.items():
             self.assertEqual(machines.detect(text), expected, text)
